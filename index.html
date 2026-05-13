@@ -131,6 +131,28 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
 @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fu{animation:fu .3s ease both}
 ::-webkit-scrollbar{width:4px;height:4px}
+
+@media print {
+  .hdr, .tabs, .hots, #scanPanel, .lks, .note { display:none !important; }
+  body { background:white !important; color:#000 !important; }
+  .card, .aiblk, .verdict, .sec, .hero { 
+    border:1px solid #ccc !important; 
+    background:white !important;
+    break-inside:avoid;
+    margin-bottom:10px;
+  }
+  .tpane { display:block !important; }
+  .ct, .aitit { color:#000 !important; }
+  .aitxt, .ai-txt { color:#000 !important; font-size:11px !important; line-height:1.6 !important; }
+  .up { color:#009944 !important; }
+  .dn { color:#cc0000 !important; }
+  .ac { color:#0066aa !important; }
+  table { border-collapse:collapse !important; }
+  td, th { border:1px solid #ccc !important; color:#000 !important; background:white !important; }
+  .pdf-hide { display:none !important; }
+  .pdf-show { display:block !important; }
+  @page { margin:15mm; size:A4; }
+}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--br);border-radius:3px}
 @media(max-width:600px){.wbtns{grid-template-columns:repeat(2,1fr)}}
@@ -181,6 +203,13 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
     <div style="font-family:var(--mf);font-size:11px;color:var(--t3);margin-top:4px">約需 20~40 秒...</div>
   </div>
   <div id="result"></div>
+  
+  <!-- PDF 下載列 -->
+  <div id="pdfBar" style="display:none;position:fixed;bottom:20px;right:20px;z-index:100;gap:10px;align-items:center">
+    <button onclick="downloadPDF()" style="background:var(--gn);color:#000;border:none;padding:12px 20px;border-radius:10px;font-family:var(--mf);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(0,230,118,.4)">
+      📄 下載 PDF 報告
+    </button>
+  </div>
 </div>
 
 <script>
@@ -370,6 +399,24 @@ function deepAnalyze(code) {
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
+function downloadPDF() {
+  // 展開所有頁籤內容供列印
+  document.querySelectorAll(".tpane").forEach(function(p){ p.style.display="block"; });
+  
+  // 設定列印標題
+  var title = document.title;
+  var code = document.getElementById("inp").value || "";
+  document.title = "台股分析報告_" + code + "_" + new Date().toLocaleDateString("zh-TW").replace(/\//g,"-");
+  
+  window.print();
+  
+  // 還原
+  setTimeout(function(){
+    document.title = title;
+    switchTab(0); // 回到第一個頁籤
+  }, 500);
+}
+
 document.getElementById("sbtn").onclick = function() { doSearch(); };
 document.getElementById("inp").onkeydown = function(e) { if (e.key === "Enter") doSearch(); };
 
@@ -380,6 +427,8 @@ function doSearch(code) {
   document.getElementById("welcome").style.display = "none";
   document.getElementById("errbox").style.display = "none";
   document.getElementById("result").innerHTML = "";
+  var pdfBar = document.getElementById("pdfBar");
+  if (pdfBar) pdfBar.style.display = "none";
   document.getElementById("loader").style.display = "flex";
   document.getElementById("sbtn").disabled = true;
   document.getElementById("sbtn").textContent = "分析中...";
@@ -640,6 +689,10 @@ function renderReport(code, text) {
     +'</div>';
 
   document.getElementById("result").innerHTML = html;
+  
+  // 顯示 PDF 下載按鈕
+  var pdfBar = document.getElementById("pdfBar");
+  if (pdfBar) pdfBar.style.display = "flex";
 }
 </script>
 </body>
