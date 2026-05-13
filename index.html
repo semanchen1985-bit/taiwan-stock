@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股AI分析站</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#04090f;--c1:#08121c;--c2:#0c1a27;--c3:#112233;
+  --br:#1a3350;--b2:#1e5a8a;
+  --ac:#00cfff;--gn:#00e676;--rd:#ff1744;--yl:#ffd600;--or:#ff6d00;
+  --t1:#dff0ff;--t2:#6a99bb;--t3:#2e5070;
+  --mf:'JetBrains Mono',monospace;--uf:'Noto Sans TC',sans-serif;
+}
+body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh}
+.hdr{position:sticky;top:0;z-index:99;background:rgba(4,9,15,.97);backdrop-filter:blur(16px);border-bottom:1px solid var(--br);padding:12px 16px;display:flex;flex-direction:column;gap:9px}
+.logo{font-family:var(--mf);font-size:16px;font-weight:700;color:var(--ac);letter-spacing:4px}
+.logo em{color:var(--gn);font-style:normal}
+.srow{display:flex;gap:8px}
+.sinp{flex:1;background:var(--c2);border:1.5px solid var(--br);color:var(--t1);font-family:var(--mf);font-size:15px;padding:10px 14px;border-radius:8px;outline:none;transition:border .2s}
+.sinp:focus{border-color:var(--ac)}.sinp::placeholder{color:var(--t3)}
+.sbtn{background:var(--ac);color:#000;border:none;padding:10px 22px;border-radius:8px;font-family:var(--mf);font-size:13px;font-weight:700;cursor:pointer}
+.sbtn:disabled{opacity:.4;cursor:not-allowed}
+.hots{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}
+.hots::-webkit-scrollbar{display:none}
+.hc{flex-shrink:0;background:var(--c2);border:1px solid var(--br);color:var(--t2);font-family:var(--mf);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer}
+.hc:hover,.hc.on{border-color:var(--ac);color:var(--ac)}
+.wrap{max-width:900px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.welcome{text-align:center;padding:70px 20px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.wbig{font-family:var(--mf);font-size:52px;font-weight:700;color:var(--ac);letter-spacing:6px}
+.wbig em{color:var(--gn);font-style:normal}
+.wsub{font-size:14px;color:var(--t2);line-height:1.9}
+.wbtns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:500px;width:100%;margin-top:6px}
+.wbtn{background:var(--c1);border:1px solid var(--br);border-radius:8px;padding:11px;cursor:pointer;text-align:left}
+.wbtn:hover{border-color:var(--ac);background:var(--c3)}
+.wbtn .wc{font-family:var(--mf);font-size:15px;font-weight:700;color:var(--ac)}
+.wbtn .wn{font-size:11px;color:var(--t3);margin-top:2px}
+.ld{display:flex;flex-direction:column;align-items:center;gap:14px;padding:70px 20px}
+.lr{width:44px;height:44px;border:3px solid var(--br);border-top-color:var(--ac);border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.stepwrap{display:flex;flex-direction:column;gap:6px}
+.step{display:flex;align-items:center;gap:8px;font-family:var(--mf);font-size:12px}
+.sdot{width:7px;height:7px;border-radius:50%}
+.s-done .sdot{background:var(--gn)}.s-active .sdot{background:var(--ac);animation:pd 1s infinite}.s-wait .sdot{background:var(--br)}
+.s-done{color:var(--t3)}.s-active{color:var(--ac)}.s-wait{color:var(--t3)}
+@keyframes pd{0%,100%{opacity:1}50%{opacity:.3}}
+.hero{background:var(--c1);border:1px solid var(--br);border-radius:12px;padding:20px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--ac),var(--gn),var(--or))}
+.htop{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.hcode{font-family:var(--mf);font-size:24px;font-weight:700;color:var(--ac);letter-spacing:3px}
+.hname{font-size:14px;color:var(--t1);margin-top:4px}
+.hmkt{font-family:var(--mf);font-size:10px;color:var(--t3);margin-top:4px}
+.hprice{font-family:var(--mf);font-size:40px;font-weight:700;line-height:1;text-align:right}
+.hchg{font-family:var(--mf);font-size:14px;margin-top:4px;text-align:right}
+.up{color:var(--gn)}.dn{color:var(--rd)}.neu{color:var(--t2)}
+.bdgs{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+.bdg{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;font-family:var(--mf)}
+.bg{background:rgba(0,230,118,.1);border:1px solid var(--gn);color:var(--gn)}
+.br2{background:rgba(255,23,68,.1);border:1px solid var(--rd);color:var(--rd)}
+.bn{background:rgba(106,153,187,.1);border:1px solid var(--t2);color:var(--t2)}
+.by{background:rgba(255,214,0,.1);border:1px solid var(--yl);color:var(--yl)}
+.bo{background:rgba(255,109,0,.1);border:1px solid var(--or);color:var(--or)}
+.scorebar{background:var(--c2);border-radius:8px;padding:10px 12px;margin-top:12px}
+.sbarlbl{font-family:var(--mf);font-size:9px;color:var(--t3);letter-spacing:.5px;margin-bottom:6px}
+.bart{height:7px;background:var(--c3);border-radius:4px;overflow:hidden;margin-bottom:4px}
+.barf{height:100%;border-radius:4px;transition:width 1s ease}
+.bfg{background:linear-gradient(90deg,#009944,var(--gn))}
+.bfr{background:linear-gradient(90deg,#990022,var(--rd))}
+.bfac{background:linear-gradient(90deg,#006680,var(--ac))}
+.barv{display:flex;justify-content:space-between;font-family:var(--mf);font-size:10px;color:var(--t2)}
+.tabs{display:flex;background:var(--c1);border:1px solid var(--br);border-radius:8px;padding:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tb{flex:1;background:none;border:none;color:var(--t2);font-family:var(--uf);font-size:13px;padding:9px 8px;border-radius:5px;cursor:pointer;white-space:nowrap;text-align:center}
+.tb.on{background:var(--c3);color:var(--ac);border:1px solid var(--b2)}
+.tb:hover:not(.on){color:var(--t1)}
+.tpane{display:none;flex-direction:column;gap:12px}
+.tpane.on{display:flex}
+.card{background:var(--c1);border:1px solid var(--br);border-radius:10px;padding:16px}
+.ct{font-family:var(--mf);font-size:9px;font-weight:700;color:var(--ac);letter-spacing:2.5px;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.ct::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--b2),transparent)}
+.aiblk{background:linear-gradient(135deg,var(--c2),rgba(0,40,70,.4));border:1px solid var(--b2);border-radius:10px;padding:18px;position:relative;overflow:hidden}
+.aiblk::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--ac),var(--gn),var(--or))}
+.aihd{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.aidot{width:8px;height:8px;background:var(--gn);border-radius:50%;animation:pd 1.5s infinite}
+.aitit{font-family:var(--mf);font-size:9px;font-weight:700;color:var(--ac);letter-spacing:2px}
+.aitxt{font-size:13px;line-height:2.1;color:var(--t1)}
+.aitxt strong{color:var(--gn);font-weight:600}
+.verdict{border-radius:10px;padding:16px 18px;border:1px solid var(--br)}
+.verdict.bull{background:rgba(0,230,118,.05);border-color:var(--gn)}
+.verdict.bear{background:rgba(255,23,68,.05);border-color:var(--rd)}
+.verdict.neut{background:rgba(106,153,187,.05);border-color:var(--t2)}
+.vt{font-family:var(--mf);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--ac);margin-bottom:10px}
+.lks{display:flex;flex-wrap:wrap;gap:8px}
+.lk{background:var(--c2);border:1px solid var(--b2);color:var(--ac);font-family:var(--mf);font-size:11px;padding:7px 13px;border-radius:7px;text-decoration:none}
+.lk:hover{background:var(--c3)}
+.err{background:rgba(255,23,68,.07);border:1px solid var(--rd);border-radius:8px;padding:14px 18px;color:var(--rd);font-family:var(--mf);font-size:13px;line-height:1.7}
+.note{font-size:10px;color:var(--t3);font-family:var(--mf);line-height:1.8;text-align:center}
+@keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fu{animation:fu .3s ease both}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--br);border-radius:3px}
+@media(max-width:600px){.wbtns{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="logo">台股<em>AI</em></div>
+  <div class="srow">
+    <input class="sinp" id="inp" placeholder="輸入台股代號，例如 2330、00878" maxlength="6">
+    <button class="sbtn" id="sbtn">分析</button>
+  </div>
+  <div class="hots" id="hots"></div>
+</header>
+
+<div class="wrap">
+  <div class="err" id="errbox" style="display:none"></div>
+  <div class="welcome" id="welcome">
+    <div class="wbig">台股<em>AI</em></div>
+    <div class="wsub">輸入任意台股代號<br>Claude AI 即時搜尋，生成完整分析報告</div>
+    <div class="wbtns" id="wbtns"></div>
+  </div>
+  <div class="ld" id="loader" style="display:none">
+    <div class="lr"></div>
+    <div class="stepwrap">
+      <div class="step s-active" id="st1"><div class="sdot"></div><span>🔍 搜尋最新台股資料...</span></div>
+      <div class="step s-wait"   id="st2"><div class="sdot"></div><span>📊 生成技術分析...</span></div>
+      <div class="step s-wait"   id="st3"><div class="sdot"></div><span>🎯 生成操作策略...</span></div>
+    </div>
+    <div style="font-family:var(--mf);font-size:11px;color:var(--t3);margin-top:4px">約需 20~40 秒...</div>
+  </div>
+  <div id="result"></div>
+</div>
+
+<script>
+var HOTS = [
+  {c:"2330",n:"台積電"},{c:"2317",n:"鴻海"},{c:"2454",n:"聯發科"},
+  {c:"2308",n:"台達電"},{c:"2603",n:"長榮"},{c:"3008",n:"大立光"},
+  {c:"2412",n:"中華電"},{c:"2882",n:"國泰金"},{c:"00878",n:"國泰永續"},
+  {c:"1301",n:"台塑"},{c:"3711",n:"日月光"},{c:"2891",n:"中信金"}
+];
+var TABS = ["行情","技術","籌碼","基本面","風險","策略"];
+
+var hotsEl = document.getElementById("hots");
+var wbtnsEl = document.getElementById("wbtns");
+HOTS.forEach(function(h) {
+  var b = document.createElement("button");
+  b.className = "hc"; b.textContent = h.c;
+  b.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
+  hotsEl.appendChild(b);
+  var w = document.createElement("div");
+  w.className = "wbtn";
+  w.innerHTML = '<div class="wc">'+h.c+'</div><div class="wn">'+h.n+'</div>';
+  w.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
+  wbtnsEl.appendChild(w);
+});
+
+document.getElementById("sbtn").onclick = function() { doSearch(); };
+document.getElementById("inp").onkeydown = function(e) { if (e.key === "Enter") doSearch(); };
+
+function doSearch(code) {
+  var c = (code || document.getElementById("inp").value).trim().replace(/\s/g,"");
+  if (!c) return;
+
+  document.getElementById("welcome").style.display = "none";
+  document.getElementById("errbox").style.display = "none";
+  document.getElementById("result").innerHTML = "";
+  document.getElementById("loader").style.display = "flex";
+  document.getElementById("sbtn").disabled = true;
+  document.getElementById("sbtn").textContent = "分析中...";
+  setStep(1);
+
+  document.querySelectorAll(".hc").forEach(function(b) {
+    b.classList.toggle("on", b.textContent === c);
+  });
+
+  // 呼叫 Netlify Function（後端）
+  fetch("/.netlify/functions/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: c })
+  }).then(function(res) {
+    if (!res.ok) {
+      return res.text().then(function(t) { throw new Error(t || "API 錯誤 " + res.status); });
+    }
+    return res.json();
+  }).then(function(data) {
+    document.getElementById("loader").style.display = "none";
+    if (data.error) throw new Error(data.error);
+    renderReport(c, data.text || "");
+    document.getElementById("sbtn").disabled = false;
+    document.getElementById("sbtn").textContent = "分析";
+  }).catch(function(e) {
+    document.getElementById("loader").style.display = "none";
+    document.getElementById("errbox").textContent = "⚠ " + (e.message || "發生錯誤，請重試");
+    document.getElementById("errbox").style.display = "block";
+    document.getElementById("sbtn").disabled = false;
+    document.getElementById("sbtn").textContent = "分析";
+  });
+
+  // 模擬進度
+  setTimeout(function() { setStep(2); }, 8000);
+  setTimeout(function() { setStep(3); }, 20000);
+}
+
+function setStep(n) {
+  ["st1","st2","st3"].forEach(function(id, i) {
+    document.getElementById(id).className = "step " + (i+1 < n ? "s-done" : i+1 === n ? "s-active" : "s-wait");
+  });
+}
+
+function parseSection(text, tag) {
+  var r = new RegExp("===\\s*" + tag + "\\s*\\n([\\s\\S]*?)(?====|$)", "i");
+  var m = text.match(r);
+  return m ? m[1].trim() : "";
+}
+
+function richHTML(text) {
+  if (!text) return '<span style="color:var(--t3);font-family:var(--mf);font-size:12px">資料生成中...</span>';
+  return text
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--gn)">$1</strong>')
+    .replace(/【(.*?)】/g,'<strong style="color:var(--gn)">【$1】</strong>')
+    .replace(/\n/g,"<br>");
+}
+
+function switchTab(idx) {
+  document.querySelectorAll(".tb").forEach(function(b,i){ b.classList.toggle("on",i===idx); });
+  document.querySelectorAll(".tpane").forEach(function(p,i){ p.classList.toggle("on",i===idx); });
+}
+
+function renderReport(code, text) {
+  var sec = {
+    overview: parseSection(text,"行情總覽"),
+    tech:     parseSection(text,"技術分析"),
+    chip:     parseSection(text,"籌碼分析"),
+    fund:     parseSection(text,"基本面"),
+    industry: parseSection(text,"產業分析"),
+    risk:     parseSection(text,"風險分析"),
+    levels:   parseSection(text,"支撐壓力"),
+    strategy: parseSection(text,"操作策略"),
+    ai:       parseSection(text,"AI綜合分析"),
+    verdict:  parseSection(text,"最終裁定")
+  };
+
+  var isBull = sec.verdict.indexOf("偏多") >= 0;
+  var isBear = sec.verdict.indexOf("偏空") >= 0;
+  var vCls = isBull?"bull":isBear?"bear":"neut";
+  var dirText = isBull?"📈 整體偏多":isBear?"📉 整體偏空":"📊 中性震盪";
+  var dirCls = isBull?"up":isBear?"dn":"neu";
+  var barW = isBull?"72%":isBear?"28%":"50%";
+  var barCls = isBull?"bfg":isBear?"bfr":"bfac";
+  var barCol = isBull?"var(--gn)":isBear?"var(--rd)":"var(--yl)";
+
+  var nameMatch = sec.overview.match(/名稱[：:]\s*(.{2,8})/);
+  var stockName = nameMatch ? nameMatch[1] : code;
+  var priceMatch = text.match(/(?:收盤|股價|現價)[：:\s]*([\d,]+\.?\d*)/);
+  var price = priceMatch ? priceMatch[1] : "—";
+
+  var badges = "";
+  if (isBull) badges += '<span class="bdg bg">整體偏多</span>';
+  if (isBear) badges += '<span class="bdg br2">整體偏空</span>';
+  if (!isBull&&!isBear) badges += '<span class="bdg bn">中性震盪</span>';
+  if (text.indexOf("多頭排列")>=0) badges += '<span class="bdg bg">多頭排列</span>';
+  if (text.indexOf("空頭排列")>=0) badges += '<span class="bdg br2">空頭排列</span>';
+  if (text.indexOf("黃金交叉")>=0) badges += '<span class="bdg bg">黃金交叉</span>';
+  if (text.indexOf("死亡交叉")>=0) badges += '<span class="bdg br2">死亡交叉</span>';
+  if (text.indexOf("爆量")>=0) badges += '<span class="bdg bo">爆量</span>';
+  if (text.indexOf("過熱")>=0) badges += '<span class="bdg by">RSI過熱</span>';
+  if (text.indexOf("超賣")>=0) badges += '<span class="bdg bg">RSI超賣</span>';
+
+  var links = [
+    ["Yahoo股市","https://tw.stock.yahoo.com/quote/"+code+".TW"],
+    ["Goodinfo","https://goodinfo.tw/StockInfo/StockDetail.asp?STOCK_ID="+code],
+    ["鉅亨網","https://www.cnyes.com/twstock/"+code],
+    ["CMoney","https://www.cmoney.tw/finance/"+code],
+    ["公開觀測站","https://mops.twse.com.tw"],
+    ["MoneyDJ","https://www.moneydj.com/KMDJ/StockSearch/StockSearch.aspx?SZ_KEY="+code]
+  ].map(function(l){return '<a class="lk" href="'+l[1]+'" target="_blank">↗ '+l[0]+'</a>';}).join("");
+
+  var chipLinks = [
+    ["三大法人","https://www.twse.com.tw/fund/TWT38U?response=html&stockNo="+code],
+    ["融資融券","https://www.twse.com.tw/exchangeReport/MI_MARGN?response=html&stockNo="+code],
+    ["主力分點","https://goodinfo.tw/StockInfo/StockBrokerTradeSum.asp?STOCK_ID="+code]
+  ].map(function(l){return '<a class="lk" href="'+l[1]+'" target="_blank">↗ '+l[0]+'</a>';}).join("");
+
+  var html =
+    '<div class="hero fu">'
+    +'<div class="htop">'
+    +'<div><div class="hcode">'+code+'</div><div class="hname">'+stockName+'</div>'
+    +'<div class="hmkt">'+new Date().toLocaleDateString("zh-TW")+' · Claude AI 即時分析</div></div>'
+    +'<div><div class="hprice '+dirCls+'">'+price+'</div>'
+    +'<div class="hchg '+dirCls+'">'+dirText+'</div></div></div>'
+    +'<div class="scorebar"><div class="sbarlbl">AI 多空判斷</div>'
+    +'<div class="bart"><div class="barf '+barCls+'" style="width:'+barW+'"></div></div>'
+    +'<div class="barv"><span style="color:var(--rd)">偏空</span>'
+    +'<span style="color:'+barCol+'">'+(isBull?"偏多":isBear?"偏空":"中性")+'</span>'
+    +'<span style="color:var(--gn)">偏多</span></div></div>'
+    +'<div class="bdgs">'+badges+'</div></div>'
+
+    +'<div class="tabs">'
+    +TABS.map(function(l,i){return '<button class="tb '+(i===0?"on":"")+'" onclick="switchTab('+i+')">'+l+'</button>';}).join("")
+    +'</div>'
+
+    +'<div class="tpane on" id="tp0">'
+    +'<div class="card"><div class="ct">行情總覽</div><div class="aitxt">'+richHTML(sec.overview)+'</div></div>'
+    +'<div class="card"><div class="ct">支撐壓力</div><div class="aitxt">'+richHTML(sec.levels)+'</div></div>'
+    +'<div class="card"><div class="ct">即時查詢</div><div class="lks">'+links+'</div></div>'
+    +'</div>'
+
+    +'<div class="tpane" id="tp1">'
+    +'<div class="card"><div class="ct">技術分析</div><div class="aitxt">'+richHTML(sec.tech)+'</div></div>'
+    +'</div>'
+
+    +'<div class="tpane" id="tp2">'
+    +'<div class="card"><div class="ct">籌碼分析</div><div class="aitxt">'+richHTML(sec.chip)+'</div></div>'
+    +'<div class="card"><div class="ct">官方資料</div><div class="lks">'+chipLinks+'</div></div>'
+    +'</div>'
+
+    +'<div class="tpane" id="tp3">'
+    +'<div class="card"><div class="ct">基本面</div><div class="aitxt">'+richHTML(sec.fund)+'</div></div>'
+    +'<div class="card"><div class="ct">產業分析</div><div class="aitxt">'+richHTML(sec.industry)+'</div></div>'
+    +'</div>'
+
+    +'<div class="tpane" id="tp4">'
+    +'<div class="card"><div class="ct">風險分析</div><div class="aitxt">'+richHTML(sec.risk)+'</div></div>'
+    +'</div>'
+
+    +'<div class="tpane" id="tp5">'
+    +'<div class="card"><div class="ct">操作策略</div><div class="aitxt">'+richHTML(sec.strategy)+'</div></div>'
+    +'<div class="aiblk"><div class="aihd"><div class="aidot"></div>'
+    +'<span class="aitit">AI 深度分析 — '+code+' '+stockName+'</span></div>'
+    +'<div class="aitxt">'+richHTML(sec.ai)+'</div></div>'
+    +'<div class="verdict '+vCls+'"><div class="vt">最終裁定</div>'
+    +'<div class="aitxt">'+richHTML(sec.verdict)+'</div></div>'
+    +'<div class="note">⚠ 本報告由 Claude AI 即時搜尋生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
+    +'</div>';
+
+  document.getElementById("result").innerHTML = html;
+}
+</script>
+</body>
+</html>
