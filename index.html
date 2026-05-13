@@ -331,10 +331,11 @@ function renderScan(stocks, mode) {
     return;
   }
 
-  var html = '<div class="scan-result">'
-    + '<div class="scan-header">'
+  var tableDiv = document.createElement("div");
+  tableDiv.className = "scan-result";
+  tableDiv.innerHTML = '<div class="scan-header">'
     + '<span>代號</span><span>名稱</span><span>股價</span><span>漲跌</span>'
-    + '<span>方向</span><span>RSI</span><span>AI建議</span><span>操作</span>'
+    + '<span>方向</span><span>RSI</span><span>建議</span><span>操作</span>'
     + '</div>';
 
   stocks.forEach(function(s) {
@@ -343,20 +344,23 @@ function renderScan(stocks, mode) {
     var chgCls = (s.changePct||"").startsWith("-") ? "dn" : (s.changePct||"").replace(/[^0-9.]/g,"")>"0" ? "up" : "neu";
     var rsiCls = s.rsi>70?"yl":s.rsi<30?"up":"";
 
-    html += '<div class="scan-row" onclick="deepAnalyze(''+s.code+'')">'
-      + '<span class="s-code">'+s.code+'</span>'
+    var rowDiv = document.createElement("div");
+    rowDiv.className = "scan-row";
+    rowDiv.innerHTML = '<span class="s-code">'+s.code+'</span>'
       + '<span class="s-name">'+s.name+'</span>'
       + '<span class="s-price '+chgCls+'">'+s.price+'</span>'
       + '<span class="'+chgCls+'">'+(s.changePct||"—")+'</span>'
       + '<span class="s-dir '+dirCls+'">'+dirIcon+' '+(s.direction||"—")+'</span>'
       + '<span class="'+rsiCls+'">'+(s.rsi||"—")+'</span>'
       + '<span class="s-suggest">'+(s.suggestion||"觀察中")+'</span>'
-      + '<span><button class="s-deep" onclick="event.stopPropagation();deepAnalyze(''+s.code+'')">深入分析</button></span>'
-      + '</div>';
+      + '<span><button class="s-deep">深入分析</button></span>';
+    rowDiv.onclick = (function(code){ return function(){ deepAnalyze(code); }; })(s.code);
+    rowDiv.querySelector(".s-deep").onclick = (function(code){ return function(e){ e.stopPropagation(); deepAnalyze(code); }; })(s.code);
+    tableDiv.appendChild(rowDiv);
   });
 
-  html += '</div>';
-  document.getElementById("scanResult").innerHTML = html;
+  document.getElementById("scanResult").innerHTML = "";
+  document.getElementById("scanResult").appendChild(tableDiv);
 }
 
 function deepAnalyze(code) {
