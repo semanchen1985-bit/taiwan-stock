@@ -213,19 +213,30 @@ function fetchAC(q) {
   fetch(window.RENDER_URL + "/search?q=" + encodeURIComponent(q))
     .then(function(r){ return r.json(); })
     .then(function(list) {
-      if (!list.length) { hideAC(); return; }
-      var html = list.map(function(s) {
-        return '<div class="ac-item" onclick="selectAC('' + s.code + '','' + s.name.replace(/'/g,"") + '')">'
-          + '<span class="ac-code">' + s.code + '</span>'
-          + '<span class="ac-name">' + s.name + '</span>'
-          + '<span class="ac-type">' + (s.type||"") + '</span>'
+      if (!list || !list.length) { hideAC(); return; }
+      var html = "";
+      for (var i=0; i<list.length; i++) {
+        var s = list[i];
+        var code = (s.code||"").replace(/"/g,"");
+        var name = (s.name||"").replace(/"/g,"");
+        html += '<div class="ac-item" data-code="'+code+'" data-name="'+name+'">'
+          + '<span class="ac-code">'+code+'</span>'
+          + '<span class="ac-name">'+name+'</span>'
+          + '<span class="ac-type">'+(s.type||"")+'</span>'
           + '</div>';
-      }).join("");
-      document.getElementById("acList").innerHTML = html;
-      document.getElementById("acList").classList.add("show");
+      }
+      var acList = document.getElementById("acList");
+      acList.innerHTML = html;
+      // 用 event delegation 避免 onclick 字串問題
+      acList.querySelectorAll(".ac-item").forEach(function(el) {
+        el.onclick = function() {
+          selectAC(this.dataset.code, this.dataset.name);
+        };
+      });
+      acList.classList.add("show");
       acActive = -1;
     })
-    .catch(function(){ hideAC(); });
+    .catch(function(e){ console.log("AC error:", e); hideAC(); });
 }
 
 function selectAC(code, name) {
