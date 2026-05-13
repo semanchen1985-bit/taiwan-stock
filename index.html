@@ -15,6 +15,15 @@
   --mf:'JetBrains Mono',monospace;--uf:'Noto Sans TC',sans-serif;
 }
 body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh}
+.autocomplete{position:relative;flex:1}
+.autocomplete-list{position:absolute;top:100%;left:0;right:0;background:var(--c1);border:1px solid var(--b2);border-radius:0 0 8px 8px;z-index:200;max-height:280px;overflow-y:auto;display:none}
+.autocomplete-list.show{display:block}
+.ac-item{padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--br)}
+.ac-item:last-child{border:none}
+.ac-item:hover,.ac-item.active{background:var(--c3)}
+.ac-code{font-family:var(--mf);font-size:14px;font-weight:700;color:var(--ac);min-width:50px}
+.ac-name{font-size:13px;color:var(--t1)}
+.ac-type{font-size:10px;color:var(--t3);margin-left:auto}
 .hdr{position:sticky;top:0;z-index:99;background:rgba(4,9,15,.97);backdrop-filter:blur(16px);border-bottom:1px solid var(--br);padding:12px 16px;display:flex;flex-direction:column;gap:9px}
 .logo{font-family:var(--mf);font-size:16px;font-weight:700;color:var(--ac);letter-spacing:4px}
 .logo em{color:var(--gn);font-style:normal}
@@ -109,7 +118,10 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
 <header class="hdr">
   <div class="logo">台股<em>AI</em></div>
   <div class="srow">
-    <input class="sinp" id="inp" placeholder="輸入台股代號，例如 2330、00878" maxlength="6">
+    <div class="autocomplete">
+      <input class="sinp" id="inp" placeholder="輸入代號或名稱，例如 2330 或 台積電" maxlength="20" autocomplete="off">
+      <div class="autocomplete-list" id="acList"></div>
+    </div>
     <button class="sbtn" id="sbtn">分析</button>
   </div>
   <div class="hots" id="hots"></div>
@@ -159,6 +171,73 @@ HOTS.forEach(function(h) {
   w.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
   wbtnsEl.appendChild(w);
 });
+
+// ── 自動補全 ──────────────────────────────────────────────
+var acTimer = null;
+var acActive = -1;
+
+document.getElementById("inp").addEventListener("input", function() {
+  var q = this.value.trim();
+  clearTimeout(acTimer);
+  acActive = -1;
+  if (!q || q.length < 1) { hideAC(); return; }
+  acTimer = setTimeout(function() { fetchAC(q); }, 200);
+});
+
+document.getElementById("inp").addEventListener("keydown", function(e) {
+  var items = document.querySelectorAll(".ac-item");
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    acActive = Math.min(acActive+1, items.length-1);
+    items.forEach(function(el,i){ el.classList.toggle("active", i===acActive); });
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    acActive = Math.max(acActive-1, -1);
+    items.forEach(function(el,i){ el.classList.toggle("active", i===acActive); });
+  } else if (e.key === "Enter") {
+    if (acActive >= 0 && items[acActive]) {
+      items[acActive].click();
+    } else {
+      doSearch();
+    }
+  } else if (e.key === "Escape") {
+    hideAC();
+  }
+});
+
+document.addEventListener("click", function(e) {
+  if (!e.target.closest(".autocomplete")) hideAC();
+});
+
+function fetchAC(q) {
+  fetch(window.RENDER_URL + "/search?q=" + encodeURIComponent(q))
+    .then(function(r){ return r.json(); })
+    .then(function(list) {
+      if (!list.length) { hideAC(); return; }
+      var html = list.map(function(s) {
+        return '<div class="ac-item" onclick="selectAC('' + s.code + '','' + s.name.replace(/'/g,"") + '')">'
+          + '<span class="ac-code">' + s.code + '</span>'
+          + '<span class="ac-name">' + s.name + '</span>'
+          + '<span class="ac-type">' + (s.type||"") + '</span>'
+          + '</div>';
+      }).join("");
+      document.getElementById("acList").innerHTML = html;
+      document.getElementById("acList").classList.add("show");
+      acActive = -1;
+    })
+    .catch(function(){ hideAC(); });
+}
+
+function selectAC(code, name) {
+  document.getElementById("inp").value = code;
+  hideAC();
+  doSearch(code);
+}
+
+function hideAC() {
+  document.getElementById("acList").classList.remove("show");
+  acActive = -1;
+}
 
 document.getElementById("sbtn").onclick = function() { doSearch(); };
 document.getElementById("inp").onkeydown = function(e) { if (e.key === "Enter") doSearch(); };
