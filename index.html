@@ -144,7 +144,7 @@ var HOTS = [
   {c:"2412",n:"中華電"},{c:"2882",n:"國泰金"},{c:"00878",n:"國泰永續"},
   {c:"1301",n:"台塑"},{c:"3711",n:"日月光"},{c:"2891",n:"中信金"}
 ];
-var TABS = ["行情","技術","籌碼","基本面","風險","策略"];
+var TABS = ["行情","技術","短中長線","籌碼","基本面","風險","策略"];
 
 var hotsEl = document.getElementById("hots");
 var wbtnsEl = document.getElementById("wbtns");
@@ -234,10 +234,39 @@ function parseSection(text, tag) {
 
 function richHTML(text) {
   if (!text) return '<span style="color:var(--t3);font-family:var(--mf);font-size:12px">資料生成中...</span>';
-  return text
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+  var t = text
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  
+  // 渲染 markdown 表格
+  var lines = t.split("\n");
+  var result = [];
+  var inTable = false;
+  for (var i=0; i<lines.length; i++) {
+    var line = lines[i];
+    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+      if (!inTable) {
+        result.push('<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px">');
+        inTable = true;
+      }
+      if (line.replace(/[|\-\s]/g,"").length === 0) continue; // 分隔行
+      var cells = line.split("|").filter((c,i,a)=>i>0&&i<a.length-1);
+      var isHeader = i===0 || (lines[i-1] && lines[i-1].trim().startsWith("|"));
+      var tag = (result.length>0 && result[result.length-1].includes("<th")) ? "td" : (i===0?"th":"td");
+      // 第一行用 th
+      var nextLine = lines[i+1]||"";
+      if (nextLine.replace(/[|\-\s]/g,"").length===0) tag="th";
+      result.push("<tr>" + cells.map(c=>`<${tag} style="border:1px solid var(--br);padding:6px 10px;text-align:left;background:${tag==="th"?"var(--c2)":"transparent"}">${c.trim()}</${tag}>`).join("") + "</tr>");
+    } else {
+      if (inTable) { result.push("</table>"); inTable=false; }
+      result.push(line);
+    }
+  }
+  if (inTable) result.push("</table>");
+  
+  return result.join("\n")
     .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--gn)">$1</strong>')
     .replace(/【(.*?)】/g,'<strong style="color:var(--gn)">【$1】</strong>')
+    .replace(/^(#{1,3})\s+(.+)$/gm, '<strong style="color:var(--ac);font-size:13px">$2</strong>')
     .replace(/\n/g,"<br>");
 }
 
@@ -256,6 +285,7 @@ function renderReport(code, text) {
     tech:      parseSection(text,"技術分析"),
     short:     parseSection(text,"短線分析"),
     mid:       parseSection(text,"中線分析"),
+    longanalysis: parseSection(text,"長線分析"),
     longtrend: parseSection(text,"長線趨勢分析"),
     chip:      parseSection(text,"籌碼分析"),
     chiptype:  parseSection(text,"籌碼屬性分析"),
@@ -347,6 +377,7 @@ function renderReport(code, text) {
     +'<div class="tpane" id="tp2">'
     +'<div class="card"><div class="ct">短線分析（1~5日）</div><div class="aitxt">'+richHTML(sec.short)+'</div></div>'
     +'<div class="card"><div class="ct">中線分析（1~8週）</div><div class="aitxt">'+richHTML(sec.mid)+'</div></div>'
+    +'<div class="card"><div class="ct">長線分析（3~12個月）</div><div class="aitxt">'+richHTML(sec.longanalysis)+'</div></div>'
     +'</div>'
     +'<div class="tpane" id="tp3">'
     +'<div class="card"><div class="ct">籌碼分析</div><div class="aitxt">'+richHTML(sec.chip)+'</div></div>'
