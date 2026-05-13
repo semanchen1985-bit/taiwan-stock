@@ -215,302 +215,361 @@ var HOTS = [
 ];
 var TABS = ["行情","技術","短中長線","籌碼","基本面","風險","策略"];
 
+// 主題切換
 function toggleTheme() {
   var html = document.documentElement;
   var isDark = html.getAttribute("data-theme") === "dark";
   html.setAttribute("data-theme", isDark ? "light" : "dark");
   localStorage.setItem("theme", isDark ? "light" : "dark");
-  document.getElementById("themeIcon").innerHTML = isDark
+  var icon = document.getElementById("themeIcon");
+  icon.innerHTML = isDark
     ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'
     : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
 }
 (function(){
   var s = localStorage.getItem("theme");
-  if (s) { document.documentElement.setAttribute("data-theme",s); if(s==="light") { var el=document.getElementById("themeIcon"); if(el) el.innerHTML='<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'; } }
+  if (s) {
+    document.documentElement.setAttribute("data-theme", s);
+    if (s === "light") {
+      var el = document.getElementById("themeIcon");
+      if (el) el.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+    }
+  }
 })();
 
-var hotsEl=document.getElementById("hots"), wbtnsEl=document.getElementById("wbtns");
-HOTS.forEach(function(h){
-  var b=document.createElement("button"); b.className="hot-chip"; b.textContent=h.c;
-  b.onclick=function(){document.getElementById("inp").value=h.c;doSearch(h.c);}; hotsEl.appendChild(b);
-  var w=document.createElement("div"); w.className="welcome-chip";
-  w.innerHTML='<div class="wc">'+h.c+'</div><div class="wn">'+h.n+'</div>';
-  w.onclick=function(){document.getElementById("inp").value=h.c;doSearch(h.c);}; wbtnsEl.appendChild(w);
+// 熱門股
+var hotsEl = document.getElementById("hots");
+var wbtnsEl = document.getElementById("wbtns");
+HOTS.forEach(function(h) {
+  var b = document.createElement("button");
+  b.className = "hot-chip"; b.textContent = h.c;
+  b.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
+  hotsEl.appendChild(b);
+  var w = document.createElement("div"); w.className = "welcome-chip";
+  w.innerHTML = '<div class="wc">' + h.c + '</div><div class="wn">' + h.n + '</div>';
+  w.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
+  wbtnsEl.appendChild(w);
 });
 
-var acTimer=null, acActive=-1;
-document.getElementById("inp").addEventListener("input",function(){
-  var q=this.value.trim(); clearTimeout(acTimer); acActive=-1;
-  if(!q){hideAC();return;} acTimer=setTimeout(function(){fetchAC(q);},200);
+// 自動補全
+var acTimer = null, acActive = -1;
+document.getElementById("inp").addEventListener("input", function() {
+  var q = this.value.trim();
+  clearTimeout(acTimer); acActive = -1;
+  if (!q) { hideAC(); return; }
+  acTimer = setTimeout(function() { fetchAC(q); }, 200);
 });
-document.getElementById("inp").addEventListener("keydown",function(e){
-  var items=document.querySelectorAll(".ac-item");
-  if(e.key==="ArrowDown"){e.preventDefault();acActive=Math.min(acActive+1,items.length-1);items.forEach(function(el,i){el.classList.toggle("active",i===acActive);});}
-  else if(e.key==="ArrowUp"){e.preventDefault();acActive=Math.max(acActive-1,-1);items.forEach(function(el,i){el.classList.toggle("active",i===acActive);});}
-  else if(e.key==="Enter"){if(acActive>=0&&items[acActive])items[acActive].click();else doSearch();}
-  else if(e.key==="Escape"){hideAC();}
+document.getElementById("inp").addEventListener("keydown", function(e) {
+  var items = document.querySelectorAll(".ac-item");
+  if (e.key === "ArrowDown") {
+    e.preventDefault(); acActive = Math.min(acActive + 1, items.length - 1);
+    items.forEach(function(el, i) { el.classList.toggle("active", i === acActive); });
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault(); acActive = Math.max(acActive - 1, -1);
+    items.forEach(function(el, i) { el.classList.toggle("active", i === acActive); });
+  } else if (e.key === "Enter") {
+    if (acActive >= 0 && items[acActive]) items[acActive].click(); else doSearch();
+  } else if (e.key === "Escape") { hideAC(); }
 });
-document.addEventListener("click",function(e){if(!e.target.closest(".search-wrap"))hideAC();});
-function fetchAC(q){
-  fetch(window.RENDER_URL+"/search?q="+encodeURIComponent(q))
-    .then(function(r){return r.json();})
-    .then(function(list){
-      if(!list||!list.length){hideAC();return;}
-      var acList=document.getElementById("acList"); acList.innerHTML="";
-      list.forEach(function(s){
-        var el=document.createElement("div"); el.className="ac-item";
-        el.innerHTML='<span class="ac-code">'+(s.code||"")+'</span><span class="ac-name">'+(s.name||"")+'</span><span class="ac-type">'+(s.type||"")+'</span>';
-        el.onclick=function(){selectAC(s.code,s.name);}; acList.appendChild(el);
+document.addEventListener("click", function(e) {
+  if (!e.target.closest(".search-wrap")) hideAC();
+});
+function fetchAC(q) {
+  fetch(window.RENDER_URL + "/search?q=" + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(list) {
+      if (!list || !list.length) { hideAC(); return; }
+      var acList = document.getElementById("acList");
+      acList.innerHTML = "";
+      list.forEach(function(s) {
+        var el = document.createElement("div"); el.className = "ac-item";
+        el.innerHTML = '<span class="ac-code">' + (s.code||"") + '</span><span class="ac-name">' + (s.name||"") + '</span><span class="ac-type">' + (s.type||"") + '</span>';
+        el.onclick = function() { selectAC(s.code, s.name); };
+        acList.appendChild(el);
       });
-      acList.classList.add("show"); acActive=-1;
-    }).catch(function(){hideAC();});
+      acList.classList.add("show"); acActive = -1;
+    }).catch(function() { hideAC(); });
 }
-function selectAC(code,name){document.getElementById("inp").value=code;hideAC();doSearch(code);}
-function hideAC(){document.getElementById("acList").classList.remove("show");acActive=-1;}
+function selectAC(code, name) { document.getElementById("inp").value = code; hideAC(); doSearch(code); }
+function hideAC() { document.getElementById("acList").classList.remove("show"); acActive = -1; }
 
-var scanMode="volume", scanOpen=false;
-function toggleScan(){
-  scanOpen=!scanOpen;
-  document.getElementById("scanPanel").classList.toggle("open",scanOpen);
-  document.getElementById("scanOpenBtn").classList.toggle("active",scanOpen);
-  document.getElementById("scanOpenBtn").textContent=scanOpen?"關閉掃描":"熱門掃描";
+// 掃描
+var scanMode = "volume", scanOpen = false;
+function toggleScan() {
+  scanOpen = !scanOpen;
+  document.getElementById("scanPanel").classList.toggle("open", scanOpen);
+  document.getElementById("scanOpenBtn").classList.toggle("active", scanOpen);
+  document.getElementById("scanOpenBtn").textContent = scanOpen ? "關閉掃描" : "熱門掃描";
 }
-function setMode(m){
-  scanMode=m;
-  document.getElementById("modeVol").classList.toggle("on",m==="volume");
-  document.getElementById("modeChg").classList.toggle("on",m==="change");
+function setMode(m) {
+  scanMode = m;
+  document.getElementById("modeVol").classList.toggle("on", m === "volume");
+  document.getElementById("modeChg").classList.toggle("on", m === "change");
 }
-function runScan(){
-  var n=parseInt(document.getElementById("scanN").value)||20;
-  var btn=document.getElementById("scanRunBtn");
-  btn.disabled=true; btn.textContent="掃描中...";
-  document.getElementById("scanResult").innerHTML='<div class="scan-msg">正在分析前'+n+'大熱門股，約需 15~30 秒...</div>';
-  fetch(window.RENDER_URL+"/scan?mode="+scanMode+"&limit="+n)
-    .then(function(r){return r.json();})
-    .then(function(data){
-      btn.disabled=false; btn.textContent="開始掃描";
-      if(data.error){document.getElementById("scanResult").innerHTML='<div class="scan-msg" style="color:var(--red)">'+data.error+'</div>';return;}
+function runScan() {
+  var n = parseInt(document.getElementById("scanN").value) || 20;
+  var btn = document.getElementById("scanRunBtn");
+  btn.disabled = true; btn.textContent = "掃描中...";
+  document.getElementById("scanResult").innerHTML = '<div class="scan-msg">正在分析前' + n + '大熱門股，約需 15~30 秒...</div>';
+  fetch(window.RENDER_URL + "/scan?mode=" + scanMode + "&limit=" + n)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false; btn.textContent = "開始掃描";
+      if (data.error) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">' + data.error + '</div>'; return; }
       renderScan(data.stocks);
-    }).catch(function(){btn.disabled=false;btn.textContent="開始掃描";document.getElementById("scanResult").innerHTML='<div class="scan-msg" style="color:var(--red)">掃描失敗，請重試</div>';});
+    }).catch(function() {
+      btn.disabled = false; btn.textContent = "開始掃描";
+      document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">掃描失敗，請重試</div>';
+    });
 }
-function renderScan(stocks){
-  if(!stocks||!stocks.length){document.getElementById("scanResult").innerHTML='<div class="scan-msg">無資料</div>';return;}
-  var wrap=document.createElement("div"); wrap.style.overflowX="auto";
-  var table=document.createElement("table"); table.className="scan-table";
-  table.innerHTML='<thead><tr><th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th><th>方向</th><th>RSI</th><th>建議</th><th></th></tr></thead>';
-  var tbody=document.createElement("tbody");
-  stocks.forEach(function(s){
-    var tr=document.createElement("tr"); tr.style.cursor="pointer";
-    var chgPct=parseFloat(s.changePct)||0;
-    var chgCls=chgPct>0?"up":chgPct<0?"dn":"neu";
-    var dirCls=s.direction==="偏多"?"up":s.direction==="偏空"?"dn":"neu";
-    tr.innerHTML='<td class="scan-code">'+s.code+'</td><td>'+s.name+'</td>'
-      +'<td class="'+chgCls+'" style="font-family:IBM Plex Mono,monospace">'+s.price+'</td>'
-      +'<td class="'+chgCls+'" style="font-family:IBM Plex Mono,monospace">'+(s.changePct||"—")+'</td>'
-      +'<td class="'+dirCls+'" style="font-family:IBM Plex Mono,monospace;font-size:11px">'+(s.direction||"—")+'</td>'
-      +'<td style="font-family:IBM Plex Mono,monospace">'+(s.rsi||"—")+'</td>'
-      +'<td class="scan-suggest">'+(s.suggestion||"觀察中")+'</td>'
-      +'<td><button class="btn-deep">深入分析</button></td>';
-    tr.onclick=function(){deepAnalyze(s.code);};
-    tr.querySelector(".btn-deep").onclick=function(e){e.stopPropagation();deepAnalyze(s.code);};
+function renderScan(stocks) {
+  if (!stocks || !stocks.length) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg">無資料</div>'; return; }
+  var wrap = document.createElement("div"); wrap.style.overflowX = "auto";
+  var table = document.createElement("table"); table.className = "scan-table";
+  table.innerHTML = '<thead><tr><th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th><th>方向</th><th>RSI</th><th>建議</th><th></th></tr></thead>';
+  var tbody = document.createElement("tbody");
+  stocks.forEach(function(s) {
+    var tr = document.createElement("tr"); tr.style.cursor = "pointer";
+    var chgPct = parseFloat(s.changePct) || 0;
+    var chgCls = chgPct > 0 ? "up" : chgPct < 0 ? "dn" : "neu";
+    var dirCls = s.direction === "偏多" ? "up" : s.direction === "偏空" ? "dn" : "neu";
+    tr.innerHTML = '<td class="scan-code">' + s.code + '</td><td>' + s.name + '</td>'
+      + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + s.price + '</td>'
+      + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + (s.changePct||"—") + '</td>'
+      + '<td class="' + dirCls + '" style="font-family:IBM Plex Mono,monospace;font-size:11px">' + (s.direction||"—") + '</td>'
+      + '<td style="font-family:IBM Plex Mono,monospace">' + (s.rsi||"—") + '</td>'
+      + '<td class="scan-suggest">' + (s.suggestion||"觀察中") + '</td>'
+      + '<td><button class="btn-deep">深入分析</button></td>';
+    tr.onclick = function() { deepAnalyze(s.code); };
+    tr.querySelector(".btn-deep").onclick = function(e) { e.stopPropagation(); deepAnalyze(s.code); };
     tbody.appendChild(tr);
   });
   table.appendChild(tbody); wrap.appendChild(table);
-  document.getElementById("scanResult").innerHTML=""; document.getElementById("scanResult").appendChild(wrap);
+  document.getElementById("scanResult").innerHTML = "";
+  document.getElementById("scanResult").appendChild(wrap);
 }
-function deepAnalyze(code){document.getElementById("inp").value=code;if(scanOpen)toggleScan();doSearch(code);window.scrollTo({top:0,behavior:"smooth"});}
+function deepAnalyze(code) { document.getElementById("inp").value = code; if (scanOpen) toggleScan(); doSearch(code); window.scrollTo({top:0,behavior:"smooth"}); }
 
-document.getElementById("sbtn").onclick=function(){doSearch();};
-document.getElementById("inp").onkeydown=function(e){if(e.key==="Enter")doSearch();};
-
-function doSearch(code){
-  var c=(code||document.getElementById("inp").value).trim().replace(/\s/g,"");
-  if(!c)return;
-  document.getElementById("welcome").style.display="none";
-  document.getElementById("errbox").style.display="none";
-  document.getElementById("result").innerHTML="";
+// 分析
+document.getElementById("sbtn").onclick = function() { doSearch(); };
+document.getElementById("inp").onkeydown = function(e) { if (e.key === "Enter") doSearch(); };
+function doSearch(code) {
+  var c = (code || document.getElementById("inp").value).trim().replace(/\s/g, "");
+  if (!c) return;
+  document.getElementById("welcome").style.display = "none";
+  document.getElementById("errbox").style.display = "none";
+  document.getElementById("result").innerHTML = "";
   document.getElementById("loader").classList.add("show");
-  document.getElementById("sbtn").disabled=true; document.getElementById("sbtn").textContent="分析中...";
-  document.getElementById("pdfBar").style.display="none";
+  document.getElementById("sbtn").disabled = true; document.getElementById("sbtn").textContent = "分析中...";
+  document.getElementById("pdfBar").style.display = "none";
   setStep(1);
-  document.querySelectorAll(".hot-chip").forEach(function(b){b.classList.toggle("on",b.textContent===c);});
-  fetch(window.RENDER_URL+"/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:c})})
-    .then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(t||"API 錯誤 "+r.status);});return r.json();})
-    .then(function(data){
+  document.querySelectorAll(".hot-chip").forEach(function(b) { b.classList.toggle("on", b.textContent === c); });
+  fetch(window.RENDER_URL + "/analyze", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({code:c})})
+    .then(function(r) { if (!r.ok) return r.text().then(function(t) { throw new Error(t || "API 錯誤 " + r.status); }); return r.json(); })
+    .then(function(data) {
       document.getElementById("loader").classList.remove("show");
-      if(data.error)throw new Error(data.error);
-      renderReport(c,data.text||"");
-      document.getElementById("pdfBar").style.display="block";
-      document.getElementById("sbtn").disabled=false; document.getElementById("sbtn").textContent="分析";
-    }).catch(function(e){
+      if (data.error) throw new Error(data.error);
+      renderReport(c, data.text || "");
+      document.getElementById("pdfBar").style.display = "block";
+      document.getElementById("sbtn").disabled = false; document.getElementById("sbtn").textContent = "分析";
+    }).catch(function(e) {
       document.getElementById("loader").classList.remove("show");
-      var eb=document.getElementById("errbox"); eb.textContent=e.message||"發生錯誤，請重試"; eb.style.display="block";
-      document.getElementById("sbtn").disabled=false; document.getElementById("sbtn").textContent="分析";
+      var eb = document.getElementById("errbox"); eb.textContent = e.message || "發生錯誤，請重試"; eb.style.display = "block";
+      document.getElementById("sbtn").disabled = false; document.getElementById("sbtn").textContent = "分析";
     });
-  setTimeout(function(){setStep(2);},8000);
-  setTimeout(function(){setStep(3);},20000);
+  setTimeout(function() { setStep(2); }, 8000);
+  setTimeout(function() { setStep(3); }, 20000);
 }
-
-function setStep(n){
-  ["st1","st2","st3"].forEach(function(id,i){
-    var el=document.getElementById(id);
-    el.className="loader-step "+(i+1<n?"done":i+1===n?"active":"");
+function setStep(n) {
+  ["st1","st2","st3"].forEach(function(id, i) {
+    var el = document.getElementById(id);
+    el.className = "loader-step " + (i+1 < n ? "done" : i+1 === n ? "active" : "");
   });
 }
 
-function parseSection(text,tag){
-  if(!text)return"";
-  var escaped=tag.replace(/[.*+?^${}()|[\]\]/g,"\$&");
-  var startReg=new RegExp("===\s*"+escaped+"[^\n]*\n","i");
-  var startMatch=text.match(startReg);
-  if(!startMatch){startReg=new RegExp("#{1,4}\s*"+escaped+"[^\n]*\n","i");startMatch=text.match(startReg);}
-  if(!startMatch)return"";
-  var startIdx=startMatch.index+startMatch[0].length;
-  var rest=text.slice(startIdx);
-  var nextMatch=rest.match(/(?:===\s*\S|#{1,4}\s+\S)/);
-  return(nextMatch?rest.slice(0,nextMatch.index):rest).trim();
+// 段落解析（純字串搜尋，無 regex 問題）
+function parseSection(text, tag) {
+  if (!text) return "";
+  var marker = "=== " + tag;
+  var idx = text.indexOf(marker);
+  if (idx < 0) { marker = "===" + tag; idx = text.indexOf(marker); }
+  if (idx < 0) return "";
+  var nlIdx = text.indexOf("\n", idx);
+  if (nlIdx < 0) return "";
+  var rest = text.slice(nlIdx + 1);
+  var next = rest.indexOf("\n=== ");
+  if (next < 0) next = rest.indexOf("\n##");
+  return (next >= 0 ? rest.slice(0, next) : rest).trim();
 }
 
-function richHTML(text){
-  if(!text)return'<span style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:12px">資料生成中...</span>';
-  var t=text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(/^={3,}\s*$/gm,"").replace(/^-{3,}\s*$/gm,"").replace(/^#{1,4}\s*$/gm,"")
-    .replace(/(
-){3,}/g,"
-
-").trim();
-  var lines=t.split("
-"),out=[],inTable=false,isFirst=false;
-  for(var i=0;i<lines.length;i++){
-    var line=lines[i].trim();
-    if(line.startsWith("|")&&line.endsWith("|")){
-      if(/^[|\-\s:]+$/.test(line)){isFirst=false;continue;}
-      if(!inTable){while(out.length&&out[out.length-1]==="")out.pop();out.push('<table class="data-table">');inTable=true;isFirst=true;}
-      var cells=line.split("|").slice(1,-1);
-      var t2=isFirst?"th":"td";
-      out.push("<tr>"+cells.map(function(c){return"<"+t2+">"+c.trim()+"</"+t2+">";}).join("")+"</tr>");
-      isFirst=false;
-    }else{if(inTable){out.push("</table>");inTable=false;}out.push(lines[i]);}
+// 富文字渲染
+function richHTML(text) {
+  if (!text) return '<span style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:12px">資料生成中...</span>';
+  var lines = text.split("\n");
+  var out = [], inTable = false, isFirst = false;
+  for (var i = 0; i < lines.length; i++) {
+    var raw = lines[i];
+    var line = raw.trim();
+    if (/^={3,}\s*$/.test(line) || /^-{3,}\s*$/.test(line)) continue;
+    if (line.startsWith("|") && line.endsWith("|")) {
+      if (/^[|\-\s:]+$/.test(line)) { isFirst = false; continue; }
+      if (!inTable) {
+        while (out.length && out[out.length-1] === "") out.pop();
+        out.push('<table class="data-table">');
+        inTable = true; isFirst = true;
+      }
+      var cells = line.split("|").slice(1, -1);
+      var t2 = isFirst ? "th" : "td";
+      out.push("<tr>" + cells.map(function(c) { return "<" + t2 + ">" + c.trim().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + "</" + t2 + ">"; }).join("") + "</tr>");
+      isFirst = false;
+    } else {
+      if (inTable) { out.push("</table>"); inTable = false; }
+      var escaped = raw.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+      escaped = escaped.replace(/【(.*?)】/g, "<strong>【$1】</strong>");
+      out.push(escaped);
+    }
   }
-  if(inTable)out.push("</table>");
-  return out.join("
-")
-    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-    .replace(/【(.*?)】/g,'<strong>【$1】</strong>')
-    .replace(/^#{1,3}\s+(.+)$/gm,'<strong style="color:var(--accent)">$1</strong>')
-    .replace(/
-/g,"<br>").replace(/(<br>){3,}/g,"<br><br>")
-    .replace(/<br>(<table)/g,"$1").replace(/(<\/table>)<br>/g,"$1");
+  if (inTable) out.push("</table>");
+  var html = out.join("<br>");
+  html = html.replace(/(<br>){3,}/g, "<br><br>");
+  html = html.replace(/<br>(<table)/g, "$1");
+  html = html.replace(/(<\/table>)<br>/g, "$1");
+  return html;
 }
 
-function switchTab(idx){
-  document.querySelectorAll(".tab-btn").forEach(function(b,i){b.classList.toggle("on",i===idx);});
-  ["tp0","tp1","tp2","tp3","tp4","tp5","tp6"].forEach(function(id,i){var el=document.getElementById(id);if(el)el.classList.toggle("on",i===idx);});
+// Tab 切換
+function switchTab(idx) {
+  document.querySelectorAll(".tab-btn").forEach(function(b, i) { b.classList.toggle("on", i === idx); });
+  ["tp0","tp1","tp2","tp3","tp4","tp5","tp6"].forEach(function(id, i) {
+    var el = document.getElementById(id); if (el) el.classList.toggle("on", i === idx);
+  });
 }
 
-function downloadPDF(){
-  var code=document.getElementById("inp").value||"";
-  var d=new Date();
-  var dateStr=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-  document.querySelectorAll(".tab-pane").forEach(function(p){p.style.display="flex";});
-  var tabNames=["行情總覽","技術分析","短中長線","籌碼分析","基本面","風險分析","操作策略"];
-  document.querySelectorAll(".tab-pane").forEach(function(p,i){
-    if(!p.querySelector(".pdf-tab-title")&&tabNames[i]){
-      var title=document.createElement("div"); title.className="pdf-tab-title";
-      title.style.cssText="font-size:13px;font-weight:bold;color:#2563eb;border-bottom:2px solid #2563eb;padding-bottom:5px;margin-bottom:12px;font-family:IBM Plex Mono,monospace";
-      title.textContent=tabNames[i]; p.insertBefore(title,p.firstChild);
+// PDF
+function downloadPDF() {
+  var code = document.getElementById("inp").value || "";
+  var d = new Date();
+  var dateStr = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  document.querySelectorAll(".tab-pane").forEach(function(p) { p.style.display = "flex"; });
+  var tabNames = ["行情總覽","技術分析","短中長線","籌碼分析","基本面","風險分析","操作策略"];
+  document.querySelectorAll(".tab-pane").forEach(function(p, i) {
+    if (!p.querySelector(".pdf-tab-title") && tabNames[i]) {
+      var title = document.createElement("div"); title.className = "pdf-tab-title";
+      title.style.cssText = "font-size:13px;font-weight:bold;color:#2563eb;border-bottom:2px solid #2563eb;padding-bottom:5px;margin-bottom:12px;font-family:IBM Plex Mono,monospace";
+      title.textContent = tabNames[i]; p.insertBefore(title, p.firstChild);
     }
   });
-  var origTitle=document.title; document.title=code+"_台股分析報告_"+dateStr;
+  var origTitle = document.title; document.title = code + "_台股分析報告_" + dateStr;
   window.print();
-  setTimeout(function(){document.title=origTitle;document.querySelectorAll(".pdf-tab-title").forEach(function(el){el.remove();});switchTab(0);},1000);
+  setTimeout(function() {
+    document.title = origTitle;
+    document.querySelectorAll(".pdf-tab-title").forEach(function(el) { el.remove(); });
+    switchTab(0);
+  }, 1000);
 }
 
-function renderReport(code,text){
-  var sec={
-    overview:parseSection(text,"行情總覽"),tech:parseSection(text,"技術分析"),
-    short:parseSection(text,"短線分析"),mid:parseSection(text,"中線分析"),
-    longanalysis:parseSection(text,"長線分析"),longtrend:parseSection(text,"長線趨勢分析"),
-    chip:parseSection(text,"籌碼分析"),chiptype:parseSection(text,"籌碼屬性分析"),
-    legal:parseSection(text,"法人分析"),margin:parseSection(text,"融資融券分析"),
-    fund:parseSection(text,"基本面分析"),industry:parseSection(text,"產業分析"),
-    market:parseSection(text,"市場風格判定"),position:parseSection(text,"位階分析"),
-    risk:parseSection(text,"風險分析"),levels:parseSection(text,"支撐壓力"),
-    strategy:parseSection(text,"操作策略"),ai:parseSection(text,"AI綜合分析"),
+// 渲染報告
+function renderReport(code, text) {
+  var sec = {
+    overview:parseSection(text,"行情總覽"), tech:parseSection(text,"技術分析"),
+    short:parseSection(text,"短線分析"), mid:parseSection(text,"中線分析"),
+    longanalysis:parseSection(text,"長線分析"), longtrend:parseSection(text,"長線趨勢分析"),
+    chip:parseSection(text,"籌碼分析"), chiptype:parseSection(text,"籌碼屬性分析"),
+    legal:parseSection(text,"法人分析"), margin:parseSection(text,"融資融券分析"),
+    fund:parseSection(text,"基本面分析"), industry:parseSection(text,"產業分析"),
+    market:parseSection(text,"市場風格判定"), position:parseSection(text,"位階分析"),
+    risk:parseSection(text,"風險分析"), levels:parseSection(text,"支撐壓力"),
+    strategy:parseSection(text,"操作策略"), ai:parseSection(text,"AI綜合分析"),
     verdict:parseSection(text,"最終裁定")
   };
-  var isBull=sec.verdict.indexOf("偏多")>=0||sec.verdict.indexOf("看多")>=0;
-  var isBear=sec.verdict.indexOf("偏空")>=0||sec.verdict.indexOf("看空")>=0;
-  var vCls=isBull?"bull":isBear?"bear":"neut";
-  var dirText=isBull?"整體偏多":isBear?"整體偏空":"中性震盪";
-  var dirCls=isBull?"up":isBear?"dn":"neu";
-  var barPct=isBull?"72%":isBear?"28%":"50%";
-  var barType=isBull?"bull":isBear?"bear":"neutral";
-  var stockName=code;
-  var nm=(sec.overview||"").match(/名稱[：:]\s*([^\s、，
-]{2,8})/);
-  if(nm&&nm[1]&&nm[1]!==code)stockName=nm[1];
-  var priceMatch=text.match(/(?:收盤|股價|現價)[：:\s]*([\d,]+\.?\d*)/);
-  var price=priceMatch?priceMatch[1]:"—";
-  var tags="";
-  if(isBull)tags+='<span class="tag tag-bull">整體偏多</span>';
-  if(isBear)tags+='<span class="tag tag-bear">整體偏空</span>';
-  if(!isBull&&!isBear)tags+='<span class="tag tag-neutral">中性震盪</span>';
-  if(text.indexOf("多頭排列")>=0)tags+='<span class="tag tag-bull">多頭排列</span>';
-  if(text.indexOf("空頭排列")>=0)tags+='<span class="tag tag-bear">空頭排列</span>';
-  if(text.indexOf("黃金交叉")>=0)tags+='<span class="tag tag-bull">黃金交叉</span>';
-  if(text.indexOf("死亡交叉")>=0)tags+='<span class="tag tag-bear">死亡交叉</span>';
-  if(text.indexOf("爆量")>=0)tags+='<span class="tag tag-hot">爆量</span>';
-  if(text.indexOf("過熱")>=0)tags+='<span class="tag tag-warn">RSI 過熱</span>';
-  if(text.indexOf("超賣")>=0)tags+='<span class="tag tag-bull">RSI 超賣</span>';
-  var links=[["Yahoo 股市","https://tw.stock.yahoo.com/quote/"+code+".TW"],["Goodinfo","https://goodinfo.tw/StockInfo/StockDetail.asp?STOCK_ID="+code],["鉅亨網","https://www.cnyes.com/twstock/"+code],["CMoney","https://www.cmoney.tw/finance/"+code],["公開觀測站","https://mops.twse.com.tw"],["TradingView","https://www.tradingview.com/chart/?symbol=TWSE:"+code]].map(function(l){return'<a class="link-btn" href="'+l[1]+'" target="_blank">'+l[0]+'</a>';}).join("");
-  var chipLinks=[["三大法人","https://www.twse.com.tw/fund/TWT38U?response=html&stockNo="+code],["融資融券","https://www.twse.com.tw/exchangeReport/MI_MARGN?response=html&stockNo="+code],["主力分點","https://goodinfo.tw/StockInfo/StockBrokerTradeSum.asp?STOCK_ID="+code]].map(function(l){return'<a class="link-btn" href="'+l[1]+'" target="_blank">'+l[0]+'</a>';}).join("");
+  var isBull = sec.verdict.indexOf("偏多") >= 0 || sec.verdict.indexOf("看多") >= 0;
+  var isBear = sec.verdict.indexOf("偏空") >= 0 || sec.verdict.indexOf("看空") >= 0;
+  var vCls = isBull ? "bull" : isBear ? "bear" : "neut";
+  var dirText = isBull ? "整體偏多" : isBear ? "整體偏空" : "中性震盪";
+  var dirCls = isBull ? "up" : isBear ? "dn" : "neu";
+  var barPct = isBull ? "72%" : isBear ? "28%" : "50%";
+  var barType = isBull ? "bull" : isBear ? "bear" : "neutral";
+  var stockName = code;
+  var nm = (sec.overview || "").match(/名稱[：:]\s*([^\s、，\n]{2,8})/);
+  if (nm && nm[1] && nm[1] !== code) stockName = nm[1];
+  var priceMatch = text.match(/(?:收盤|股價|現價)[：:\s]*([\d,]+\.?\d*)/);
+  var price = priceMatch ? priceMatch[1] : "—";
+  var tags = "";
+  if (isBull) tags += '<span class="tag tag-bull">整體偏多</span>';
+  if (isBear) tags += '<span class="tag tag-bear">整體偏空</span>';
+  if (!isBull && !isBear) tags += '<span class="tag tag-neutral">中性震盪</span>';
+  if (text.indexOf("多頭排列") >= 0) tags += '<span class="tag tag-bull">多頭排列</span>';
+  if (text.indexOf("空頭排列") >= 0) tags += '<span class="tag tag-bear">空頭排列</span>';
+  if (text.indexOf("黃金交叉") >= 0) tags += '<span class="tag tag-bull">黃金交叉</span>';
+  if (text.indexOf("死亡交叉") >= 0) tags += '<span class="tag tag-bear">死亡交叉</span>';
+  if (text.indexOf("爆量") >= 0) tags += '<span class="tag tag-hot">爆量</span>';
+  if (text.indexOf("過熱") >= 0) tags += '<span class="tag tag-warn">RSI 過熱</span>';
+  if (text.indexOf("超賣") >= 0) tags += '<span class="tag tag-bull">RSI 超賣</span>';
+  var links = [
+    ["Yahoo 股市","https://tw.stock.yahoo.com/quote/"+code+".TW"],
+    ["Goodinfo","https://goodinfo.tw/StockInfo/StockDetail.asp?STOCK_ID="+code],
+    ["鉅亨網","https://www.cnyes.com/twstock/"+code],
+    ["CMoney","https://www.cmoney.tw/finance/"+code],
+    ["公開觀測站","https://mops.twse.com.tw"],
+    ["TradingView","https://www.tradingview.com/chart/?symbol=TWSE:"+code]
+  ].map(function(l) { return '<a class="link-btn" href="' + l[1] + '" target="_blank">' + l[0] + '</a>'; }).join("");
+  var chipLinks = [
+    ["三大法人","https://www.twse.com.tw/fund/TWT38U?response=html&stockNo="+code],
+    ["融資融券","https://www.twse.com.tw/exchangeReport/MI_MARGN?response=html&stockNo="+code],
+    ["主力分點","https://goodinfo.tw/StockInfo/StockBrokerTradeSum.asp?STOCK_ID="+code]
+  ].map(function(l) { return '<a class="link-btn" href="' + l[1] + '" target="_blank">' + l[0] + '</a>'; }).join("");
 
-  var html='<div class="hero fade-up">'
-    +'<div class="hero-top"><div><div class="hero-code">'+code+'</div><div class="hero-name">'+stockName+'</div><div class="hero-meta">'+new Date().toLocaleDateString("zh-TW")+'</div></div>'
-    +'<div><div class="hero-price '+dirCls+'">'+price+'</div><div class="hero-chg '+dirCls+'">'+dirText+'</div></div></div>'
-    +'<div class="score-bars"><div class="score-bar"><div class="bar-label">多空判斷</div><div class="bar-track"><div class="bar-fill '+barType+'" style="width:'+barPct+'"></div></div><div class="bar-vals"><span style="color:var(--red)">偏空</span><span style="color:var(--('+( isBull?'green':isBear?'red':'accent')+'))">'+dirText+'</span><span style="color:var(--green)">偏多</span></div></div>'
-    +'<div class="score-bar"><div class="bar-label">分析完整度</div><div class="bar-track"><div class="bar-fill neutral" style="width:'+Math.min(100,Math.round(text.length/80))+'%"></div></div><div class="bar-vals"><span></span><span>'+text.length+' 字</span><span></span></div></div></div>'
-    +'<div class="tags">'+tags+'</div></div>'
-
-    +'<div class="tabs-wrap fade-up">'+TABS.map(function(l,i){return'<button class="tab-btn '+(i===0?"on":"")+'" onclick="switchTab('+i+')">'+l+'</button>';}).join("")+'</div>'
-
-    +'<div class="tab-pane on fade-up" id="tp0">'
-    +'<div class="card"><div class="card-title">行情總覽</div><div class="ai-text">'+richHTML(sec.overview)+'</div></div>'
-    +'<div class="card"><div class="card-title">支撐壓力</div><div class="ai-text">'+richHTML(sec.levels)+'</div></div>'
-    +'<div class="card"><div class="card-title">位階分析</div><div class="ai-text">'+richHTML(sec.position)+'</div></div>'
-    +'<div class="card"><div class="card-title">即時查詢</div><div class="links">'+links+'</div></div>'
-    +'</div>'
-    +'<div class="tab-pane" id="tp1">'
-    +'<div class="card"><div class="card-title">技術分析</div><div class="ai-text">'+richHTML(sec.tech)+'</div></div>'
-    +'<div class="card"><div class="card-title">長線趨勢分析</div><div class="ai-text">'+richHTML(sec.longtrend)+'</div></div>'
-    +'<div class="card"><div class="card-title">市場風格判定</div><div class="ai-text">'+richHTML(sec.market)+'</div></div>'
-    +'</div>'
-    +'<div class="tab-pane" id="tp2">'
-    +'<div class="card"><div class="card-title">短線分析（1~5日）</div><div class="ai-text">'+richHTML(sec.short)+'</div></div>'
-    +'<div class="card"><div class="card-title">中線分析（1~8週）</div><div class="ai-text">'+richHTML(sec.mid)+'</div></div>'
-    +'<div class="card"><div class="card-title">長線分析（3~12個月）</div><div class="ai-text">'+richHTML(sec.longanalysis)+'</div></div>'
-    +'</div>'
-    +'<div class="tab-pane" id="tp3">'
-    +'<div class="card"><div class="card-title">籌碼分析</div><div class="ai-text">'+richHTML(sec.chip)+'</div></div>'
-    +'<div class="card"><div class="card-title">籌碼屬性分析</div><div class="ai-text">'+richHTML(sec.chiptype)+'</div></div>'
-    +'<div class="card"><div class="card-title">法人分析</div><div class="ai-text">'+richHTML(sec.legal)+'</div></div>'
-    +'<div class="card"><div class="card-title">融資融券分析</div><div class="ai-text">'+richHTML(sec.margin)+'</div></div>'
-    +'<div class="card"><div class="card-title">官方資料</div><div class="links">'+chipLinks+'</div></div>'
-    +'</div>'
-    +'<div class="tab-pane" id="tp4">'
-    +'<div class="card"><div class="card-title">基本面分析</div><div class="ai-text">'+richHTML(sec.fund)+'</div></div>'
-    +'<div class="card"><div class="card-title">產業分析</div><div class="ai-text">'+richHTML(sec.industry)+'</div></div>'
-    +'</div>'
-    +'<div class="tab-pane" id="tp5">'
-    +'<div class="card"><div class="card-title">風險分析</div><div class="ai-text">'+richHTML(sec.risk)+'</div></div>'
-    +'</div>'
-    +'<div class="tab-pane" id="tp6">'
-    +'<div class="card"><div class="card-title">操作策略</div><div class="ai-text">'+richHTML(sec.strategy)+'</div></div>'
-    +'<div class="ai-block"><div class="ai-header"><div class="ai-dot"></div><span class="ai-title-txt">綜合分析 — '+code+' '+stockName+'</span></div><div class="ai-text">'+richHTML(sec.ai)+'</div></div>'
-    +'<div class="verdict '+vCls+'"><div class="verdict-title">最終裁定</div><div class="ai-text">'+richHTML(sec.verdict)+'</div></div>'
-    +'<div class="note">本報告由 TWSE + FinMind 真實資料生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
-    +'</div>';
+  var html = '<div class="hero fade-up">'
+    + '<div class="hero-top">'
+    + '<div><div class="hero-code">' + code + '</div><div class="hero-name">' + stockName + '</div><div class="hero-meta">' + new Date().toLocaleDateString("zh-TW") + '</div></div>'
+    + '<div><div class="hero-price ' + dirCls + '">' + price + '</div><div class="hero-chg ' + dirCls + '">' + dirText + '</div></div>'
+    + '</div>'
+    + '<div class="score-bars">'
+    + '<div class="score-bar"><div class="bar-label">多空判斷</div><div class="bar-track"><div class="bar-fill ' + barType + '" style="width:' + barPct + '"></div></div><div class="bar-vals"><span style="color:var(--red)">偏空</span><span>' + dirText + '</span><span style="color:var(--green)">偏多</span></div></div>'
+    + '<div class="score-bar"><div class="bar-label">分析完整度</div><div class="bar-track"><div class="bar-fill neutral" style="width:' + Math.min(100,Math.round(text.length/80)) + '%"></div></div><div class="bar-vals"><span></span><span>' + text.length + ' 字</span><span></span></div></div>'
+    + '</div>'
+    + '<div class="tags">' + tags + '</div>'
+    + '</div>'
+    + '<div class="tabs-wrap fade-up">'
+    + TABS.map(function(l,i) { return '<button class="tab-btn ' + (i===0?"on":"") + '" onclick="switchTab(' + i + ')">' + l + '</button>'; }).join("")
+    + '</div>'
+    + '<div class="tab-pane on fade-up" id="tp0">'
+    + '<div class="card"><div class="card-title">行情總覽</div><div class="ai-text">' + richHTML(sec.overview) + '</div></div>'
+    + '<div class="card"><div class="card-title">支撐壓力</div><div class="ai-text">' + richHTML(sec.levels) + '</div></div>'
+    + '<div class="card"><div class="card-title">位階分析</div><div class="ai-text">' + richHTML(sec.position) + '</div></div>'
+    + '<div class="card"><div class="card-title">即時查詢</div><div class="links">' + links + '</div></div>'
+    + '</div>'
+    + '<div class="tab-pane" id="tp1">'
+    + '<div class="card"><div class="card-title">技術分析</div><div class="ai-text">' + richHTML(sec.tech) + '</div></div>'
+    + '<div class="card"><div class="card-title">長線趨勢分析</div><div class="ai-text">' + richHTML(sec.longtrend) + '</div></div>'
+    + '<div class="card"><div class="card-title">市場風格判定</div><div class="ai-text">' + richHTML(sec.market) + '</div></div>'
+    + '</div>'
+    + '<div class="tab-pane" id="tp2">'
+    + '<div class="card"><div class="card-title">短線分析（1~5日）</div><div class="ai-text">' + richHTML(sec.short) + '</div></div>'
+    + '<div class="card"><div class="card-title">中線分析（1~8週）</div><div class="ai-text">' + richHTML(sec.mid) + '</div></div>'
+    + '<div class="card"><div class="card-title">長線分析（3~12個月）</div><div class="ai-text">' + richHTML(sec.longanalysis) + '</div></div>'
+    + '</div>'
+    + '<div class="tab-pane" id="tp3">'
+    + '<div class="card"><div class="card-title">籌碼分析</div><div class="ai-text">' + richHTML(sec.chip) + '</div></div>'
+    + '<div class="card"><div class="card-title">籌碼屬性分析</div><div class="ai-text">' + richHTML(sec.chiptype) + '</div></div>'
+    + '<div class="card"><div class="card-title">法人分析</div><div class="ai-text">' + richHTML(sec.legal) + '</div></div>'
+    + '<div class="card"><div class="card-title">融資融券分析</div><div class="ai-text">' + richHTML(sec.margin) + '</div></div>'
+    + '<div class="card"><div class="card-title">官方資料</div><div class="links">' + chipLinks + '</div></div>'
+    + '</div>'
+    + '<div class="tab-pane" id="tp4">'
+    + '<div class="card"><div class="card-title">基本面分析</div><div class="ai-text">' + richHTML(sec.fund) + '</div></div>'
+    + '<div class="card"><div class="card-title">產業分析</div><div class="ai-text">' + richHTML(sec.industry) + '</div></div>'
+    + '</div>'
+    + '<div class="tab-pane" id="tp5">'
+    + '<div class="card"><div class="card-title">風險分析</div><div class="ai-text">' + richHTML(sec.risk) + '</div></div>'
+    + '</div>'
+    + '<div class="tab-pane" id="tp6">'
+    + '<div class="card"><div class="card-title">操作策略</div><div class="ai-text">' + richHTML(sec.strategy) + '</div></div>'
+    + '<div class="ai-block"><div class="ai-header"><div class="ai-dot"></div><span class="ai-title-txt">綜合分析 — ' + code + ' ' + stockName + '</span></div><div class="ai-text">' + richHTML(sec.ai) + '</div></div>'
+    + '<div class="verdict ' + vCls + '"><div class="verdict-title">最終裁定</div><div class="ai-text">' + richHTML(sec.verdict) + '</div></div>'
+    + '<div class="note">本報告由 TWSE + FinMind 真實資料生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
+    + '</div>';
 
   document.getElementById("result").innerHTML = html;
 }
