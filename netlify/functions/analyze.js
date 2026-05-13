@@ -27,7 +27,7 @@ exports.handler = async function(event, context) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-6",
         max_tokens: 8000,
         stream: true,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
