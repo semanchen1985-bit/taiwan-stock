@@ -406,7 +406,9 @@ function downloadPDF() {
   // 設定列印標題
   var title = document.title;
   var code = document.getElementById("inp").value || "";
-  document.title = "台股分析報告_" + code + "_" + new Date().toLocaleDateString("zh-TW").replace(/\//g,"-");
+  var d = new Date();
+  var dateStr = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  document.title = code + "_台股分析報告_" + dateStr;
   
   window.print();
   
