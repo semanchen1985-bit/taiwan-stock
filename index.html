@@ -34,6 +34,28 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
 .sbtn:disabled{opacity:.4;cursor:not-allowed}
 .hots{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}
 .hots::-webkit-scrollbar{display:none}
+/* 掃描功能 */
+.scan-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.scan-btn{background:var(--or);color:#000;border:none;padding:9px 18px;border-radius:8px;font-family:var(--mf);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.scan-btn:hover{opacity:.9}.scan-btn:disabled{opacity:.4}
+.mode-btn{background:var(--c2);border:1px solid var(--br);color:var(--t2);font-family:var(--mf);font-size:11px;padding:6px 14px;border-radius:20px;cursor:pointer}
+.mode-btn.on{background:var(--c3);border-color:var(--ac);color:var(--ac)}
+.scan-count{display:flex;align-items:center;gap:6px;font-family:var(--mf);font-size:11px;color:var(--t3)}
+.scan-count input{width:50px;background:var(--c2);border:1px solid var(--br);color:var(--t1);font-family:var(--mf);font-size:12px;padding:4px 8px;border-radius:6px;text-align:center;outline:none}
+.scan-result{background:var(--c1);border:1px solid var(--br);border-radius:10px;overflow:hidden;margin-top:4px}
+.scan-header{display:grid;grid-template-columns:60px 80px 70px 60px 80px 80px 1fr 100px;gap:0;background:var(--c2);border-bottom:1px solid var(--br)}
+.scan-header span{font-family:var(--mf);font-size:9px;color:var(--t3);padding:8px 10px;letter-spacing:.5px}
+.scan-row{display:grid;grid-template-columns:60px 80px 70px 60px 80px 80px 1fr 100px;gap:0;border-bottom:1px solid var(--br);cursor:pointer;transition:background .15s}
+.scan-row:last-child{border:none}
+.scan-row:hover{background:var(--c3)}
+.scan-row span{font-size:12px;padding:10px 10px;display:flex;align-items:center}
+.scan-row .s-code{font-family:var(--mf);font-weight:700;color:var(--ac)}
+.scan-row .s-name{color:var(--t1)}
+.scan-row .s-price{font-family:var(--mf)}
+.scan-row .s-dir{font-family:var(--mf);font-size:11px;font-weight:700}
+.scan-row .s-suggest{font-size:11px;color:var(--t2);line-height:1.4}
+.scan-row .s-deep{background:var(--ac);color:#000;border:none;padding:4px 10px;border-radius:5px;font-family:var(--mf);font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap}
+.scan-loading{text-align:center;padding:30px;font-family:var(--mf);font-size:12px;color:var(--t2)}
 .hc{flex-shrink:0;background:var(--c2);border:1px solid var(--br);color:var(--t2);font-family:var(--mf);font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer}
 .hc:hover,.hc.on{border-color:var(--ac);color:var(--ac)}
 .wrap{max-width:900px;margin:0 auto;padding:16px;display:grid;gap:14px}
@@ -124,14 +146,29 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
     </div>
     <button class="sbtn" id="sbtn">分析</button>
   </div>
-  <div class="hots" id="hots"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+    <div class="hots" id="hots"></div>
+    <button class="scan-btn" id="scanOpenBtn" onclick="toggleScan()">🔥 熱門掃描</button>
+  </div>
 </header>
+<!-- 掃描面板 -->
+<div id="scanPanel" style="display:none;background:var(--c1);border-bottom:2px solid var(--or);padding:14px 16px">
+  <div class="scan-bar" style="margin-bottom:12px">
+    <button class="mode-btn on" id="modeVol" onclick="setMode('volume')">📊 成交量排行</button>
+    <button class="mode-btn" id="modeChg" onclick="setMode('change')">🚀 漲幅排行</button>
+    <div class="scan-count">
+      前 <input type="number" id="scanN" value="20" min="5" max="30"> 名
+    </div>
+    <button class="scan-btn" id="scanRunBtn" onclick="runScan()" style="margin-left:auto">開始掃描</button>
+  </div>
+  <div id="scanResult"></div>
+</div>
 
 <div class="wrap">
   <div class="err" id="errbox" style="display:none"></div>
   <div class="welcome" id="welcome">
     <div class="wbig">台股<em>AI</em></div>
-    <div class="wsub">輸入任意台股代號<br>Claude AI 即時搜尋，生成完整分析報告</div>
+    <div class="wsub">輸入任意台股代號<br>即時資料分析，生成完整分析報告</div>
     <div class="wbtns" id="wbtns"></div>
   </div>
   <div class="ld" id="loader" style="display:none">
@@ -248,6 +285,85 @@ function selectAC(code, name) {
 function hideAC() {
   document.getElementById("acList").classList.remove("show");
   acActive = -1;
+}
+
+// ── 掃描功能 ──────────────────────────────────────────────
+var scanMode = "volume";
+var scanOpen = false;
+
+function toggleScan() {
+  scanOpen = !scanOpen;
+  document.getElementById("scanPanel").style.display = scanOpen ? "block" : "none";
+  document.getElementById("scanOpenBtn").textContent = scanOpen ? "✕ 關閉掃描" : "🔥 熱門掃描";
+}
+
+function setMode(mode) {
+  scanMode = mode;
+  document.getElementById("modeVol").classList.toggle("on", mode==="volume");
+  document.getElementById("modeChg").classList.toggle("on", mode==="change");
+}
+
+function runScan() {
+  var n = parseInt(document.getElementById("scanN").value) || 20;
+  var btn = document.getElementById("scanRunBtn");
+  btn.disabled = true; btn.textContent = "掃描中...";
+  document.getElementById("scanResult").innerHTML = '<div class="scan-loading">🔍 正在分析前'+n+'大熱門股，請稍候（約15~30秒）...</div>';
+
+  fetch(window.RENDER_URL + "/scan?mode=" + scanMode + "&limit=" + n)
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      btn.disabled = false; btn.textContent = "開始掃描";
+      if (data.error) {
+        document.getElementById("scanResult").innerHTML = '<div class="scan-loading" style="color:var(--rd)">⚠ ' + data.error + '</div>';
+        return;
+      }
+      renderScan(data.stocks, data.mode);
+    })
+    .catch(function(e) {
+      btn.disabled = false; btn.textContent = "開始掃描";
+      document.getElementById("scanResult").innerHTML = '<div class="scan-loading" style="color:var(--rd)">⚠ 掃描失敗，請重試</div>';
+    });
+}
+
+function renderScan(stocks, mode) {
+  if (!stocks || !stocks.length) {
+    document.getElementById("scanResult").innerHTML = '<div class="scan-loading">無資料</div>';
+    return;
+  }
+
+  var html = '<div class="scan-result">'
+    + '<div class="scan-header">'
+    + '<span>代號</span><span>名稱</span><span>股價</span><span>漲跌</span>'
+    + '<span>方向</span><span>RSI</span><span>AI建議</span><span>操作</span>'
+    + '</div>';
+
+  stocks.forEach(function(s) {
+    var dirCls = s.direction==="偏多"?"up":s.direction==="偏空"?"dn":"neu";
+    var dirIcon = s.direction==="偏多"?"📈":s.direction==="偏空"?"📉":"📊";
+    var chgCls = (s.changePct||"").startsWith("-") ? "dn" : (s.changePct||"").replace(/[^0-9.]/g,"")>"0" ? "up" : "neu";
+    var rsiCls = s.rsi>70?"yl":s.rsi<30?"up":"";
+
+    html += '<div class="scan-row" onclick="deepAnalyze(''+s.code+'')">'
+      + '<span class="s-code">'+s.code+'</span>'
+      + '<span class="s-name">'+s.name+'</span>'
+      + '<span class="s-price '+chgCls+'">'+s.price+'</span>'
+      + '<span class="'+chgCls+'">'+(s.changePct||"—")+'</span>'
+      + '<span class="s-dir '+dirCls+'">'+dirIcon+' '+(s.direction||"—")+'</span>'
+      + '<span class="'+rsiCls+'">'+(s.rsi||"—")+'</span>'
+      + '<span class="s-suggest">'+(s.suggestion||"觀察中")+'</span>'
+      + '<span><button class="s-deep" onclick="event.stopPropagation();deepAnalyze(''+s.code+'')">深入分析</button></span>'
+      + '</div>';
+  });
+
+  html += '</div>';
+  document.getElementById("scanResult").innerHTML = html;
+}
+
+function deepAnalyze(code) {
+  document.getElementById("inp").value = code;
+  toggleScan(); // 關閉掃描面板
+  doSearch(code);
+  window.scrollTo({top:0, behavior:"smooth"});
 }
 
 document.getElementById("sbtn").onclick = function() { doSearch(); };
@@ -460,7 +576,7 @@ function renderReport(code, text) {
     '<div class="hero fu">'
     +'<div class="htop">'
     +'<div><div class="hcode">'+code+'</div><div class="hname">'+stockName+'</div>'
-    +'<div class="hmkt">'+new Date().toLocaleDateString("zh-TW")+' · Claude AI 即時分析</div></div>'
+    +'<div class="hmkt">'+new Date().toLocaleDateString("zh-TW")+' · AI 即時分析</div></div>'
     +'<div><div class="hprice '+dirCls+'">'+price+'</div>'
     +'<div class="hchg '+dirCls+'">'+dirText+'</div></div></div>'
     +'<div class="scorebar"><div class="sbarlbl">AI 多空判斷</div>'
@@ -516,7 +632,7 @@ function renderReport(code, text) {
     +'<div class="aitxt">'+richHTML(sec.ai)+'</div></div>'
     +'<div class="verdict '+vCls+'"><div class="vt">最終裁定</div>'
     +'<div class="aitxt">'+richHTML(sec.verdict)+'</div></div>'
-    +'<div class="note">⚠ 本報告由真實 TWSE + FinMind 資料 + Claude AI 生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
+    +'<div class="note">⚠ 本報告由真實 TWSE + FinMind 資料生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
     +'</div>';
 
   document.getElementById("result").innerHTML = html;
