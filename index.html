@@ -275,7 +275,8 @@ function richHTML(text) {
     .replace(/【(.*?)】/g,'<strong style="color:var(--gn)">【$1】</strong>')
     .replace(/^#{1,3}\s+(.+)$/gm,'<strong style="color:var(--ac)">$1</strong>')
     .replace(/\n/g,"<br>")
-    .replace(/(<br>\s*){3,}/g,"<br><br>")
+    .replace(/(<br>){2,}(<table)/g,"$2")
+    .replace(/(<br>){3,}/g,"<br><br>")
     .replace(/^(<br>)+/,"")
     .replace(/(<br>)+(<table)/g,"$2")
     .replace(/(<\/table>)(<br>)+/g,"$1");
