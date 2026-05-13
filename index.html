@@ -136,7 +136,7 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
 
 <script>
 // ★ 把這裡改成你的 Render 網址 ★
-window.RENDER_URL = "https://taiwan-stock-api-lm71.onrender.com";
+window.RENDER_URL = "https://your-app.onrender.com";
 
 var HOTS = [
   {c:"2330",n:"台積電"},{c:"2317",n:"鴻海"},{c:"2454",n:"聯發科"},
@@ -239,21 +239,33 @@ function richHTML(text) {
 
 function switchTab(idx) {
   document.querySelectorAll(".tb").forEach(function(b,i){ b.classList.toggle("on",i===idx); });
-  document.querySelectorAll(".tpane").forEach(function(p,i){ p.classList.toggle("on",i===idx); });
+  var panes = ["tp0","tp1","tp2","tp3","tp4","tp5","tp6"];
+  panes.forEach(function(id,i){
+    var el = document.getElementById(id);
+    if(el) el.classList.toggle("on", i===idx);
+  });
 }
 
 function renderReport(code, text) {
   var sec = {
-    overview: parseSection(text,"行情總覽"),
-    tech:     parseSection(text,"技術分析"),
-    chip:     parseSection(text,"籌碼分析"),
-    fund:     parseSection(text,"基本面"),
-    industry: parseSection(text,"產業分析"),
-    risk:     parseSection(text,"風險分析"),
-    levels:   parseSection(text,"支撐壓力"),
-    strategy: parseSection(text,"操作策略"),
-    ai:       parseSection(text,"AI綜合分析"),
-    verdict:  parseSection(text,"最終裁定")
+    overview:  parseSection(text,"行情總覽"),
+    tech:      parseSection(text,"技術分析"),
+    short:     parseSection(text,"短線分析"),
+    mid:       parseSection(text,"中線分析"),
+    longtrend: parseSection(text,"長線趨勢分析"),
+    chip:      parseSection(text,"籌碼分析"),
+    chiptype:  parseSection(text,"籌碼屬性分析"),
+    legal:     parseSection(text,"法人分析"),
+    margin:    parseSection(text,"融資融券分析"),
+    fund:      parseSection(text,"基本面分析"),
+    industry:  parseSection(text,"產業分析"),
+    market:    parseSection(text,"市場風格判定"),
+    position:  parseSection(text,"位階分析"),
+    risk:      parseSection(text,"風險分析"),
+    levels:    parseSection(text,"支撐壓力"),
+    strategy:  parseSection(text,"操作策略"),
+    ai:        parseSection(text,"AI綜合分析"),
+    verdict:   parseSection(text,"最終裁定")
   };
 
   var isBull = sec.verdict.indexOf("偏多") >= 0;
@@ -318,35 +330,45 @@ function renderReport(code, text) {
     +'<div class="tpane on" id="tp0">'
     +'<div class="card"><div class="ct">行情總覽</div><div class="aitxt">'+richHTML(sec.overview)+'</div></div>'
     +'<div class="card"><div class="ct">支撐壓力</div><div class="aitxt">'+richHTML(sec.levels)+'</div></div>'
+    +'<div class="card"><div class="ct">位階分析</div><div class="aitxt">'+richHTML(sec.position)+'</div></div>'
     +'<div class="card"><div class="ct">即時查詢</div><div class="lks">'+links+'</div></div>'
     +'</div>'
 
     +'<div class="tpane" id="tp1">'
     +'<div class="card"><div class="ct">技術分析</div><div class="aitxt">'+richHTML(sec.tech)+'</div></div>'
+    +'<div class="card"><div class="ct">長線趨勢分析</div><div class="aitxt">'+richHTML(sec.longtrend)+'</div></div>'
+    +'<div class="card"><div class="ct">市場風格判定</div><div class="aitxt">'+richHTML(sec.market)+'</div></div>'
     +'</div>'
 
     +'<div class="tpane" id="tp2">'
+    +'<div class="card"><div class="ct">短線分析（1~5日）</div><div class="aitxt">'+richHTML(sec.short)+'</div></div>'
+    +'<div class="card"><div class="ct">中線分析（1~8週）</div><div class="aitxt">'+richHTML(sec.mid)+'</div></div>'
+    +'</div>'
+    +'<div class="tpane" id="tp3">'
     +'<div class="card"><div class="ct">籌碼分析</div><div class="aitxt">'+richHTML(sec.chip)+'</div></div>'
+    +'<div class="card"><div class="ct">籌碼屬性分析</div><div class="aitxt">'+richHTML(sec.chiptype)+'</div></div>'
+    +'<div class="card"><div class="ct">法人分析</div><div class="aitxt">'+richHTML(sec.legal)+'</div></div>'
+    +'<div class="card"><div class="ct">融資融券分析</div><div class="aitxt">'+richHTML(sec.margin)+'</div></div>'
     +'<div class="card"><div class="ct">官方資料</div><div class="lks">'+chipLinks+'</div></div>'
     +'</div>'
 
-    +'<div class="tpane" id="tp3">'
-    +'<div class="card"><div class="ct">基本面</div><div class="aitxt">'+richHTML(sec.fund)+'</div></div>'
+    +'<div class="tpane" id="tp4">'
+    +'<div class="card"><div class="ct">基本面分析</div><div class="aitxt">'+richHTML(sec.fund)+'</div></div>'
     +'<div class="card"><div class="ct">產業分析</div><div class="aitxt">'+richHTML(sec.industry)+'</div></div>'
     +'</div>'
 
-    +'<div class="tpane" id="tp4">'
+    +'<div class="tpane" id="tp5">'
     +'<div class="card"><div class="ct">風險分析</div><div class="aitxt">'+richHTML(sec.risk)+'</div></div>'
     +'</div>'
 
-    +'<div class="tpane" id="tp5">'
+    +'<div class="tpane" id="tp6">'
     +'<div class="card"><div class="ct">操作策略</div><div class="aitxt">'+richHTML(sec.strategy)+'</div></div>'
     +'<div class="aiblk"><div class="aihd"><div class="aidot"></div>'
-    +'<span class="aitit">AI 深度分析 — '+code+' '+stockName+'</span></div>'
+    +'<span class="aitit">AI 綜合分析 — '+code+' '+stockName+'</span></div>'
     +'<div class="aitxt">'+richHTML(sec.ai)+'</div></div>'
     +'<div class="verdict '+vCls+'"><div class="vt">最終裁定</div>'
     +'<div class="aitxt">'+richHTML(sec.verdict)+'</div></div>'
-    +'<div class="note">⚠ 本報告由 Claude AI 即時搜尋生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
+    +'<div class="note">⚠ 本報告由真實 TWSE + FinMind 資料 + Claude AI 生成，僅供參考，不構成投資建議。股市有風險，投資需自負。</div>'
     +'</div>';
 
   document.getElementById("result").innerHTML = html;
