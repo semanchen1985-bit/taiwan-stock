@@ -1,6 +1,12 @@
 [build]
   functions = "netlify/functions"
 
+[functions]
+  node_bundler = "esbuild"
+
+[functions."analyze"]
+  timeout = 120
+
 [[headers]]
   for = "/*"
   [headers.values]
