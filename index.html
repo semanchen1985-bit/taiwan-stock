@@ -135,6 +135,9 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
 </div>
 
 <script>
+// ★ 把這裡改成你的 Render 網址 ★
+window.RENDER_URL = "https://taiwan-stock-api-lm71.onrender.com";
+
 var HOTS = [
   {c:"2330",n:"台積電"},{c:"2317",n:"鴻海"},{c:"2454",n:"聯發科"},
   {c:"2308",n:"台達電"},{c:"2603",n:"長榮"},{c:"3008",n:"大立光"},
@@ -177,7 +180,7 @@ function doSearch(code) {
   });
 
   // 呼叫 Netlify Function（後端）
-  fetch("/.netlify/functions/analyze", {
+  fetch(window.RENDER_URL+"/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code: c })
