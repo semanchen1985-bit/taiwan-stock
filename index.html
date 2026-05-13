@@ -216,17 +216,15 @@ function setStep(n) {
 
 function parseSection(text, tag) {
   if (!text) return "";
-  // 支援多種格式
   var escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  var patterns = [
-    new RegExp("===\\s*" + escaped + "[^\\n]*\\n([\\s\\S]*?)(?====\\s|$)", "i"),
-    new RegExp("#{1,4}\\s*" + escaped + "[^\\n]*\\n([\\s\\S]*?)(?=#{1,4}\\s|$)", "i"),
-    new RegExp("【" + escaped + "[^】]*】[^\\n]*\\n([\\s\\S]*?)(?=【|$)", "i"),
-  ];
-  for (var i=0; i<patterns.length; i++) {
+  // === 格式（最常用）
+  var r1 = new RegExp("===\\s*" + escaped + "[^\\n]*\\n([\\s\\S]*?)(?====[^=]|$)", "i");
+  // ### markdown 格式
+  var r2 = new RegExp("#{1,4}\\s*" + escaped + "[^\\n]*\\n([\\s\\S]*?)(?=#{1,4}\\s|$)", "i");
+  for (var r of [r1, r2]) {
     try {
-      var m = text.match(patterns[i]);
-      if (m && m[1] && m[1].trim()) return m[1].trim();
+      var m = text.match(r);
+      if (m && m[1] && m[1].trim().length > 5) return m[1].trim();
     } catch(e) {}
   }
   return "";
@@ -235,7 +233,13 @@ function parseSection(text, tag) {
 function richHTML(text) {
   if (!text) return '<span style="color:var(--t3);font-family:var(--mf);font-size:12px">資料生成中...</span>';
   var t = text
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    // 移除純 markdown 分隔線和空 ## 標題
+    .replace(/^={3,}\s*$/gm,"")
+    .replace(/^-{3,}\s*$/gm,"")
+    .replace(/^#{1,4}\s*$/gm,"")
+    // 移除連續空行（超過2行變1行）
+    .replace(/(\n\s*){3,}/g,"\n\n");
   
   // 渲染 markdown 表格
   var lines = t.split("\n");
@@ -267,7 +271,9 @@ function richHTML(text) {
     .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--gn)">$1</strong>')
     .replace(/【(.*?)】/g,'<strong style="color:var(--gn)">【$1】</strong>')
     .replace(/^(#{1,3})\s+(.+)$/gm, '<strong style="color:var(--ac);font-size:13px">$2</strong>')
-    .replace(/\n/g,"<br>");
+    .replace(/\n/g,"<br>")
+    .replace(/<br>(<table)/g,"$1")
+    .replace(/(<\/table>)<br>/g,"$1");
 }
 
 function switchTab(idx) {
