@@ -476,17 +476,24 @@ function setStep(n) {
 function parseSection(text, tag) {
   if (!text) return "";
   var escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // === 格式（最常用）
-  var r1 = new RegExp("===\\s*" + escaped + "[^\\n]*\\n([\\s\\S]*?)(?====[^=]|$)", "i");
-  // ### markdown 格式
-  var r2 = new RegExp("#{1,4}\\s*" + escaped + "[^\\n]*\\n([\\s\\S]*?)(?=#{1,4}\\s|$)", "i");
-  for (var r of [r1, r2]) {
-    try {
-      var m = text.match(r);
-      if (m && m[1] && m[1].trim().length > 5) return m[1].trim();
-    } catch(e) {}
+  // 找到段落開始位置
+  var startReg = new RegExp("===\\s*" + escaped + "[^\\n]*\\n", "i");
+  var startMatch = text.match(startReg);
+  if (!startMatch) {
+    // 試 ### 格式
+    startReg = new RegExp("#{1,4}\\s*" + escaped + "[^\\n]*\\n", "i");
+    startMatch = text.match(startReg);
   }
-  return "";
+  if (!startMatch) return "";
+  
+  var startIdx = startMatch.index + startMatch[0].length;
+  var rest = text.slice(startIdx);
+  
+  // 找下一個段落開始（=== 或 ###）
+  var nextMatch = rest.match(/(?:===\s*\S|#{1,4}\s+\S)/);
+  var content = nextMatch ? rest.slice(0, nextMatch.index) : rest;
+  
+  return content.trim();
 }
 
 function richHTML(text) {
