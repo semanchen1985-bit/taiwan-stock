@@ -136,7 +136,7 @@ body{background:var(--bg);color:var(--t1);font-family:var(--uf);min-height:100vh
 
 <script>
 // ★ 把這裡改成你的 Render 網址 ★
-window.RENDER_URL = "https://taiwan-stock-api-lm71.onrender.com";
+window.RENDER_URL = "https://your-app.onrender.com";
 
 var HOTS = [
   {c:"2330",n:"台積電"},{c:"2317",n:"鴻海"},{c:"2454",n:"聯發科"},
@@ -215,9 +215,17 @@ function setStep(n) {
 }
 
 function parseSection(text, tag) {
-  var r = new RegExp("===\\s*" + tag + "\\s*\\n([\\s\\S]*?)(?====|$)", "i");
-  var m = text.match(r);
-  return m ? m[1].trim() : "";
+  // 支援 === 格式 和 ### markdown 格式
+  var patterns = [
+    new RegExp("===\\s*" + tag + "\\s*\\n([\\s\\S]*?)(?====|$)", "i"),
+    new RegExp("#{1,3}\\s*" + tag + "\\s*\\n([\\s\\S]*?)(?=#{1,3}\\s|$)", "i"),
+    new RegExp("【" + tag + "】\\s*\\n([\\s\\S]*?)(?=【|$)", "i"),
+  ];
+  for (var i=0; i<patterns.length; i++) {
+    var m = text.match(patterns[i]);
+    if (m && m[1].trim()) return m[1].trim();
+  }
+  return "";
 }
 
 function richHTML(text) {
