@@ -208,12 +208,53 @@ body{background:var(--bg);color:var(--text1);font-family:"Noto Sans TC",sans-ser
 <div class="pdf-btn-float" id="pdfBar"><button onclick="downloadPDF()">下載 PDF 報告</button></div>
 <script>
 window.RENDER_URL = "https://taiwan-stock-api-lm71.onrender.com";
-var HOTS = [
+// 預設熱門股（未載入前顯示）
+var HOTS_DEFAULT = [
   {c:"2330",n:"台積電"},{c:"2317",n:"鴻海"},{c:"2454",n:"聯發科"},
-  {c:"2308",n:"台達電"},{c:"2603",n:"長榮"},{c:"3008",n:"大立光"},
-  {c:"2412",n:"中華電"},{c:"2882",n:"國泰金"},{c:"00878",n:"國泰永續"},
-  {c:"1301",n:"台塑"},{c:"3711",n:"日月光"},{c:"2891",n:"中信金"}
+  {c:"2308",n:"台達電"},{c:"2603",n:"長榮"},{c:"2412",n:"中華電"},
+  {c:"2882",n:"國泰金"},{c:"00878",n:"國泰永續"},{c:"3711",n:"日月光"},
+  {c:"2891",n:"中信金"}
 ];
+var HOTS = HOTS_DEFAULT.slice();
+
+// 動態抓取熱門股（漲停+成交量各5支，共10支）
+function loadHotStocks() {
+  fetch(window.RENDER_URL + "/scan?mode=volume&limit=5")
+    .then(function(r){ return r.json(); })
+    .then(function(volData) {
+      return fetch(window.RENDER_URL + "/scan?mode=change&limit=10")
+        .then(function(r){ return r.json(); })
+        .then(function(chgData) {
+          var vol5 = (volData.stocks||[]).slice(0,5);
+          var chg5 = (chgData.stocks||[]).filter(function(s){
+            // 選漲幅最大的5支（不重複）
+            return !vol5.find(function(v){return v.code===s.code;});
+          }).slice(0,5);
+          var combined = vol5.concat(chg5).slice(0,10);
+          if (combined.length < 5) return; // 資料不足就不更新
+          HOTS = combined.map(function(s){return {c:s.code, n:s.name||s.code};});
+          renderHots();
+        });
+    })
+    .catch(function(){}); // 失敗靜默
+}
+
+function renderHots() {
+  var hotsEl = document.getElementById("hots");
+  var wbtnsEl = document.getElementById("wbtns");
+  hotsEl.innerHTML = "";
+  wbtnsEl.innerHTML = "";
+  HOTS.forEach(function(h) {
+    var b = document.createElement("button");
+    b.className = "hot-chip"; b.textContent = h.c;
+    b.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
+    hotsEl.appendChild(b);
+    var w = document.createElement("div"); w.className = "welcome-chip";
+    w.innerHTML = '<div class="wc">'+h.c+'</div><div class="wn">'+h.n+'</div>';
+    w.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
+    wbtnsEl.appendChild(w);
+  });
+}
 var TABS = ["行情","技術","短中長線","籌碼","基本面","風險","策略"];
 
 // 主題切換
