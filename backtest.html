@@ -1219,10 +1219,11 @@ function _emptyMetrics(initCapital) {
 
   function compute(equity, trades, initCapital, dates) {
     var n = equity.length;
-    // no-trade / warmup-only edge case
-    if (!n || !trades || !trades.filter(function(t){return t.type==='exit';}).length) {
+    // no data edge case（只在完全沒資料時歸零）
+    if (!n || !trades) {
       return _emptyMetrics(initCapital || 1000000);
     }
+    // 若有進場但尚未出場（持倉中），仍繼續計算績效（equity 曲線有浮動損益）
     var finalEquity = equity[n - 1];
     // negative equity / NaN protection（做空極端虧損時）
     if (!isFinite(finalEquity) || finalEquity <= 0) finalEquity = initCapital * 0.001;
@@ -2715,10 +2716,11 @@ var MetricsEngine = (function() {
 
   function compute(equity, trades, initCapital, dates) {
     var n = equity.length;
-    // no-trade / warmup-only edge case
-    if (!n || !trades || !trades.filter(function(t){return t.type==='exit';}).length) {
+    // no data edge case（只在完全沒資料時歸零）
+    if (!n || !trades) {
       return _emptyMetrics(initCapital || 1000000);
     }
+    // 若有進場但尚未出場（持倉中），仍繼續計算績效（equity 曲線有浮動損益）
     var finalEquity = equity[n - 1];
     // negative equity / NaN protection（做空極端虧損時）
     if (!isFinite(finalEquity) || finalEquity <= 0) finalEquity = initCapital * 0.001;
@@ -3302,19 +3304,26 @@ function setChecked(gid, ids, paramMap) {
     buildCheckGroup(id, map[id]);
   });
 
-function setChecked(gid, ids) {
-  document.querySelectorAll('#'+gid+' input').forEach(function(cb){
-    var on = (ids||[]).indexOf(cb.value)>=0;
-    cb.checked=on; cb.closest('.check-item').classList.toggle('on',on);
+// setChecked: 完整版已在上方定義（支援 paramMap）
+
+// getSelected: 使用上方完整版（支援 checkbox type 篩選）
+
+function selectAll(g) {
+  document.querySelectorAll('#'+g+' input[type=checkbox]').forEach(function(cb) {
+    cb.checked = true;
+    cb.closest('.check-item').classList.add('on');
+    var pRow = cb.closest('.strat-param-wrap') && cb.closest('.strat-param-wrap').querySelector('.param-row');
+    if (pRow) pRow.style.display = 'grid';
   });
 }
-function getSelected(gid) {
-  var r=[];
-  document.querySelectorAll('#'+gid+' input:checked').forEach(function(cb){r.push(cb.value);});
-  return r;
+function clearAll(g) {
+  document.querySelectorAll('#'+g+' input[type=checkbox]').forEach(function(cb) {
+    cb.checked = false;
+    cb.closest('.check-item').classList.remove('on');
+    var pRow = cb.closest('.strat-param-wrap') && cb.closest('.strat-param-wrap').querySelector('.param-row');
+    if (pRow) pRow.style.display = 'none';
+  });
 }
-function selectAll(g){ document.querySelectorAll('#'+g+' input').forEach(function(cb){cb.checked=true;cb.closest('.check-item').classList.add('on');}); }
-function clearAll(g) { document.querySelectorAll('#'+g+' input').forEach(function(cb){cb.checked=false;cb.closest('.check-item').classList.remove('on');}); }
 
 setChecked('longEntryGroup', ['ma_golden','rsi_oversold']);
 setChecked('longExitGroup',  ['ma_death','rsi_overbought']);
@@ -3616,6 +3625,7 @@ async function runBacktest() {
   var sellFee   = autoFee ? (isETF?0.2:0.4425) : +document.getElementById('sellFee').value;
 
   if (!code)  { alert('請輸入股票代號'); return done(); }
+  var longEntryIds = getSelected('longEntryGroup');
   if (!longEntryIds.length) { alert('請至少選一個進場策略'); return done(); }
 
   var config = {
