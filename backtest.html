@@ -57,6 +57,38 @@ html{font-size:14px}body{background:var(--bg);color:var(--text1);font-family:"No
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}.fade-up{animation:fadeUp .2s ease both}
 .pos{color:var(--green)}.neg{color:var(--red)}.neu{color:var(--text1)}
 
+/* 策略參數列 */
+.strat-param-wrap{display:contents}
+.check-group .strat-param-wrap{display:block}
+.param-row{
+  grid-column:1/-1;
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+  gap:4px;
+  padding:5px 6px 7px;
+  background:var(--bg4);
+  border:1px solid var(--border2);
+  border-top:none;
+  border-radius:0 0 4px 4px;
+  margin-bottom:3px;
+}
+.param-cell{display:flex;flex-direction:column;gap:2px}
+.param-label{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--text3);letter-spacing:.03em}
+.param-input{
+  background:var(--bg2);
+  border:1px solid var(--border2);
+  color:var(--text1);
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11px;
+  padding:3px 6px;
+  border-radius:3px;
+  outline:none;
+  width:100%;
+}
+.param-input:focus{border-color:var(--accent)}
+/* 讓 check-group 的 item 本身佔整列 */
+.check-group .check-item{grid-column:span 1}
+
 </style>
 </head>
 <body>
@@ -431,21 +463,76 @@ var Indicators = (function() {
     return { upper: upper, lower: lower };
   }
 
-  // Precompute all indicators for a dataset
-  function precompute(data) {
+  // ── 動態指標計算（含參數，帶 cache 避免重複）────────────────
+  function precompute(data, stratConfig) {
     var c = data.closes, h = data.highs, l = data.lows, v = data.volumes;
+    var cache = {};
+
+    function getSMA(p)  { var k='sma'+p;  return cache[k]||(cache[k]=sma(c,p));   }
+    function getEMA(p)  { var k='ema'+p;  return cache[k]||(cache[k]=ema(c,p));   }
+    function getRSI(p)  { var k='rsi'+p;  return cache[k]||(cache[k]=rsi(c,p));   }
+    function getKD(p)   { var k='kd'+p;   return cache[k]||(cache[k]=kd(h,l,c,p)); }
+    function getBoll(p,m){ var k='boll'+p+'_'+m; return cache[k]||(cache[k]=boll(c,p,m)); }
+    function getWR(p)   { var k='wr'+p;   return cache[k]||(cache[k]=wr(h,l,c,p)); }
+    function getDC(p)   { var k='dc'+p;   return cache[k]||(cache[k]=donchian(h,l,p)); }
+    function getVolSMA(p){ var k='vsma'+p; return cache[k]||(cache[k]=sma(v,p));  }
+    function getMACD(f,s,sig) {
+      var k='macd'+f+'_'+s+'_'+sig;
+      return cache[k]||(cache[k]=macd(c,f,s,sig));
+    }
+
+    // 從 stratConfig 萃取所有用到的參數，動態計算所需指標
+    var sc = stratConfig || {};
+    var allStrats = []
+      .concat(sc.longEntry||[]).concat(sc.longExit||[])
+      .concat(sc.shortEntry||[]).concat(sc.shortExit||[]);
+
+    // 預先計算每個策略需要的指標
+    allStrats.forEach(function(s) {
+      var p = s.params || {};
+      var id = s.id || s;
+      // MA類
+      if (/ma_golden|ma_death|s_ma_golden|s_ma_death/.test(id)) {
+        getSMA(p.fast||5); getSMA(p.slow||20);
+      }
+      if (/price_above_ma|price_below_ma|s_price/.test(id)) { getSMA(p.period||20); }
+      // RSI
+      if (/rsi/.test(id)) { getRSI(p.period||14); }
+      // MACD
+      if (/macd/.test(id)) { getMACD(p.fast||12, p.slow||26, p.signal||9); }
+      // Boll
+      if (/boll/.test(id)) { getBoll(p.period||20, p.mult||2); }
+      // KD
+      if (/kd/.test(id)) { getKD(p.period||9); }
+      // Volume
+      if (/vol_surge/.test(id)) { getVolSMA(p.volPeriod||20); }
+      // WR
+      if (/wr/.test(id)) { getWR(p.period||14); }
+      // Donchian / Turtle
+      if (/price_high|turtle_break|s_price_high|s_turtle_high/.test(id)) { getDC(p.period||20); }
+      if (/price_low|turtle_stop|s_price_low|s_turtle_low/.test(id)) { getDC(p.period||20); }
+    });
+
+    // 永遠預計算幾個基本的（給今日訊號UI用）
+    getSMA(5); getSMA(20); getRSI(14); getMACD(12,26,9); getBoll(20,2); getKD(9);
+    getWR(14); getDC(20); getDC(10); getVolSMA(20);
+
+    // 回傳 accessor 物件（惰性計算）
     return {
-      ma5:   sma(c, 5),   ma10:  sma(c, 10),  ma20:  sma(c, 20),
-      ma60:  sma(c, 60),  ma120: sma(c, 120),  ma200: sma(c, 200),
-      ema20: ema(c, 20),  ema200:ema(c, 200),
-      rsi14: rsi(c, 14),
-      kd9:   kd(h, l, c, 9),
-      macd:  macd(c, 12, 26, 9),
-      boll20:boll(c, 20, 2),
-      wr14:  wr(h, l, c, 14),
-      dc20:  donchian(h, l, 20),
-      dc10:  donchian(h, l, 10),
-      vol20: sma(v, 20),
+      // 基本快捷 key（兼容舊 code）
+      ma5:   getSMA(5),  ma10: getSMA(10), ma20: getSMA(20),
+      ma60:  getSMA(60), ma120:getSMA(120),ma200:getSMA(200),
+      ema20: getEMA(20), ema200:getEMA(200),
+      rsi14: getRSI(14),
+      kd9:   getKD(9),
+      macd:  getMACD(12,26,9),
+      boll20:getBoll(20,2),
+      wr14:  getWR(14),
+      dc20:  getDC(20),
+      dc10:  getDC(10),
+      vol20: getVolSMA(20),
+      // 動態取得函式
+      getSMA, getEMA, getRSI, getKD, getBoll, getWR, getDC, getVolSMA, getMACD,
     };
   }
 
@@ -467,45 +554,88 @@ var SignalEngine = (function() {
   // 安全比較（NaN-safe）
   function v(x) { return !isNaN(x) && x != null; }
 
+  // ── 從策略陣列取得某策略的參數（物件或預設值）───────────
+  function getP(strategies, stratId, key, def) {
+    var list = strategies.entry || strategies.exit || [];
+    var found = null;
+    list.forEach(function(s) {
+      if ((s.id||s) === stratId) found = s.params || {};
+    });
+    if (!found) return def;
+    return (found[key] != null) ? found[key] : def;
+  }
+
   function scoreLongEntry(i, ind, data, strategies) {
     if (i < 1) return 0;
     var c = data.closes, vols = data.volumes;
-    var p = i, q = i - 1;          // p=今, q=昨（都是 sigDay 及之前）
-    var e = strategies.entry || [];
+    var p = i, q = i - 1;
+    // 支援 string[] 或 {id, params}[] 兩種格式
+    var entryIds = (strategies.entry||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({entry:strategies.entry}, id, key, def); };
 
-    if (e.indexOf("ma_golden")     >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] <= ind.ma20[q] && ind.ma5[p] > ind.ma20[p]) score += 2;
-
-    if (e.indexOf("price_above_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] <= ind.ma20[q] && c[p] > ind.ma20[p]) score += 1;
-
-    if (e.indexOf("rsi_oversold")  >= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p])) {
-      if (ind.rsi14[q] < 30 && ind.rsi14[p] >= 30) score += 3;
-      else if (ind.rsi14[p] < 25)                   score += 1;
+    // 均線黃金交叉
+    if (entryIds.indexOf('ma_golden') >= 0) {
+      var fast=pr('ma_golden','fast',5), slow=pr('ma_golden','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])&&v(mf[p])&&v(ms[p]))
+        if (mf[q]<=ms[q] && mf[p]>ms[p]) score+=2;
     }
-
-    if (e.indexOf("macd_golden")   >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] < 0 && ind.macd.hist[p] >= 0) score += 2;
-
-    if (e.indexOf("boll_break")    >= 0 && v(ind.boll20.lower[p]))
-      if (c[q] <= ind.boll20.lower[q] && c[p] > ind.boll20.lower[p]) score += 2;
-
-    if (e.indexOf("kd_golden")     >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] <= ind.kd9.d[q] && ind.kd9.k[p] > ind.kd9.d[p] && ind.kd9.k[p] < 50) score += 2;
-
-    if (e.indexOf("vol_surge")     >= 0 && v(ind.vol20[p]))
-      if (vols[p] > ind.vol20[p] * 2.0 && c[p] > c[q]) score += 1;
-
-    if (e.indexOf("price_high")    >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
-    if (e.indexOf("wr_oversold")   >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] < -80 && ind.wr14[p] >= -80) score += 2;
-
-    if (e.indexOf("turtle_break")  >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
+    // 價格突破均線
+    if (entryIds.indexOf('price_above_ma') >= 0) {
+      var period=pr('price_above_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]<=ma[q] && c[p]>ma[p]) score+=1;
+    }
+    // RSI超賣
+    if (entryIds.indexOf('rsi_oversold') >= 0) {
+      var period=pr('rsi_oversold','period',14), thr=pr('rsi_oversold','threshold',30);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) {
+        if (r[q]<thr && r[p]>=thr) score+=3;
+        else if (r[p]<thr-5)       score+=1;
+      }
+    }
+    // MACD黃金交叉
+    if (entryIds.indexOf('macd_golden') >= 0) {
+      var fast=pr('macd_golden','fast',12), slow=pr('macd_golden','slow',26), sig=pr('macd_golden','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]<0&&m.hist[p]>=0) score+=2;
+    }
+    // 布林突破下軌
+    if (entryIds.indexOf('boll_break') >= 0) {
+      var period=pr('boll_break','period',20), mult=pr('boll_break','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.lower[p])) if (c[q]<=b.lower[q]&&c[p]>b.lower[p]) score+=2;
+    }
+    // KD黃金交叉
+    if (entryIds.indexOf('kd_golden') >= 0) {
+      var period=pr('kd_golden','period',9), thr=pr('kd_golden','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]<=kobj.d[q]&&kobj.k[p]>kobj.d[p]&&kobj.k[p]<thr) score+=2;
+    }
+    // 成交量爆增
+    if (entryIds.indexOf('vol_surge') >= 0) {
+      var vp=pr('vol_surge','volPeriod',20), vm=pr('vol_surge','volMult',2.0);
+      var vs=ind.getVolSMA(vp);
+      if (v(vs[p])) if (vols[p]>vs[p]*vm&&c[p]>c[q]) score+=1;
+    }
+    // 突破N日前高
+    if (entryIds.indexOf('price_high') >= 0) {
+      var period=pr('price_high','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
+    // 威廉%R超賣
+    if (entryIds.indexOf('wr_oversold') >= 0) {
+      var period=pr('wr_oversold','period',14), thr=pr('wr_oversold','threshold',-80);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]<thr&&wrv[p]>=thr) score+=2;
+    }
+    // 海龜突破
+    if (entryIds.indexOf('turtle_break') >= 0) {
+      var period=pr('turtle_break','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
     return score;
   }
 
@@ -513,38 +643,66 @@ var SignalEngine = (function() {
     if (i < 1) return 0;
     var c = data.closes;
     var p = i, q = i - 1;
-    var e = strategies.exit || [];
+    var exitIds = (strategies.exit||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({exit:strategies.exit}, id, key, def); };
 
-    if (e.indexOf("ma_death")      >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] >= ind.ma20[q] && ind.ma5[p] < ind.ma20[p]) score += 2;
-
-    if (e.indexOf("price_below_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] >= ind.ma20[q] && c[p] < ind.ma20[p]) score += 1;
-
-    if (e.indexOf("rsi_overbought")>= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p])) {
-      if (ind.rsi14[q] > 70 && ind.rsi14[p] <= 70) score += 3;
-      else if (ind.rsi14[p] > 80)                    score += 1;
+    // 均線死亡交叉
+    if (exitIds.indexOf('ma_death') >= 0) {
+      var fast=pr('ma_death','fast',5), slow=pr('ma_death','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])) if (mf[q]>=ms[q]&&mf[p]<ms[p]) score+=2;
     }
-
-    if (e.indexOf("macd_death")    >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] > 0 && ind.macd.hist[p] <= 0) score += 2;
-
-    if (e.indexOf("boll_upper")    >= 0 && v(ind.boll20.upper[p]))
-      if (c[p] >= ind.boll20.upper[p]) score += 1;
-
-    if (e.indexOf("kd_death")      >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] >= ind.kd9.d[q] && ind.kd9.k[p] < ind.kd9.d[p] && ind.kd9.k[p] > 50) score += 2;
-
-    if (e.indexOf("price_low")     >= 0 && v(ind.dc20.lower[q]))
-      if (c[p] < ind.dc20.lower[q]) score += 2;
-
-    if (e.indexOf("wr_overbought") >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] > -20 && ind.wr14[p] <= -20) score += 2;
-
-    if (e.indexOf("turtle_stop")   >= 0 && v(ind.dc10.lower[q]))
-      if (c[p] < ind.dc10.lower[q]) score += 2;
-
+    // 跌破均線
+    if (exitIds.indexOf('price_below_ma') >= 0) {
+      var period=pr('price_below_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]>=ma[q]&&c[p]<ma[p]) score+=1;
+    }
+    // RSI超買回落
+    if (exitIds.indexOf('rsi_overbought') >= 0) {
+      var period=pr('rsi_overbought','period',14), thr=pr('rsi_overbought','threshold',70);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) {
+        if (r[q]>thr&&r[p]<=thr) score+=3;
+        else if (r[p]>thr+10)    score+=1;
+      }
+    }
+    // MACD死亡交叉
+    if (exitIds.indexOf('macd_death') >= 0) {
+      var fast=pr('macd_death','fast',12), slow=pr('macd_death','slow',26), sig=pr('macd_death','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]>0&&m.hist[p]<=0) score+=2;
+    }
+    // 觸碰布林上軌
+    if (exitIds.indexOf('boll_upper') >= 0) {
+      var period=pr('boll_upper','period',20), mult=pr('boll_upper','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.upper[p])) if (c[p]>=b.upper[p]) score+=1;
+    }
+    // KD死亡交叉
+    if (exitIds.indexOf('kd_death') >= 0) {
+      var period=pr('kd_death','period',9), thr=pr('kd_death','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]>=kobj.d[q]&&kobj.k[p]<kobj.d[p]&&kobj.k[p]>thr) score+=2;
+    }
+    // 跌破N日前低
+    if (exitIds.indexOf('price_low') >= 0) {
+      var period=pr('price_low','period',20), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
+    // 威廉%R超買
+    if (exitIds.indexOf('wr_overbought') >= 0) {
+      var period=pr('wr_overbought','period',14), thr=pr('wr_overbought','threshold',-20);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]>thr&&wrv[p]<=thr) score+=2;
+    }
+    // 海龜停損N日低
+    if (exitIds.indexOf('turtle_stop') >= 0) {
+      var period=pr('turtle_stop','period',10), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
+    // 移動停損（在 ExecutionEngine 處理，這裡不計分）
     return score;
   }
 
@@ -552,37 +710,53 @@ var SignalEngine = (function() {
     if (i < 1) return 0;
     var c = data.closes;
     var p = i, q = i - 1;
-    var e = strategies.entry || [];
+    var entryIds = (strategies.entry||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({entry:strategies.entry}, id, key, def); };
 
-    if (e.indexOf("s_ma_death")      >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] >= ind.ma20[q] && ind.ma5[p] < ind.ma20[p]) score += 2;
-
-    if (e.indexOf("s_price_below_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] >= ind.ma20[q] && c[p] < ind.ma20[p]) score += 1;
-
-    if (e.indexOf("s_rsi_overbought")>= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p])) {
-      if (ind.rsi14[q] > 70 && ind.rsi14[p] <= 70) score += 3;
+    if (entryIds.indexOf('s_ma_death') >= 0) {
+      var fast=pr('s_ma_death','fast',5), slow=pr('s_ma_death','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])) if (mf[q]>=ms[q]&&mf[p]<ms[p]) score+=2;
     }
-
-    if (e.indexOf("s_macd_death")    >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] > 0 && ind.macd.hist[p] <= 0) score += 2;
-
-    if (e.indexOf("s_boll_upper")    >= 0 && v(ind.boll20.upper[p]))
-      if (c[p] >= ind.boll20.upper[p]) score += 1;
-
-    if (e.indexOf("s_kd_death")      >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] >= ind.kd9.d[q] && ind.kd9.k[p] < ind.kd9.d[p] && ind.kd9.k[p] > 50) score += 2;
-
-    if (e.indexOf("s_price_low")     >= 0 && v(ind.dc20.lower[q]))
-      if (c[p] < ind.dc20.lower[q]) score += 2;
-
-    if (e.indexOf("s_wr_overbought") >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] > -20 && ind.wr14[p] <= -20) score += 2;
-
-    if (e.indexOf("s_turtle_low")    >= 0 && v(ind.dc20.lower[q]))
-      if (c[p] < ind.dc20.lower[q]) score += 2;
-
+    if (entryIds.indexOf('s_price_below_ma') >= 0) {
+      var period=pr('s_price_below_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]>=ma[q]&&c[p]<ma[p]) score+=1;
+    }
+    if (entryIds.indexOf('s_rsi_overbought') >= 0) {
+      var period=pr('s_rsi_overbought','period',14), thr=pr('s_rsi_overbought','threshold',70);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) if (r[q]>thr&&r[p]<=thr) score+=3;
+    }
+    if (entryIds.indexOf('s_macd_death') >= 0) {
+      var fast=pr('s_macd_death','fast',12), slow=pr('s_macd_death','slow',26), sig=pr('s_macd_death','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]>0&&m.hist[p]<=0) score+=2;
+    }
+    if (entryIds.indexOf('s_boll_upper') >= 0) {
+      var period=pr('s_boll_upper','period',20), mult=pr('s_boll_upper','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.upper[p])) if (c[p]>=b.upper[p]) score+=1;
+    }
+    if (entryIds.indexOf('s_kd_death') >= 0) {
+      var period=pr('s_kd_death','period',9), thr=pr('s_kd_death','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]>=kobj.d[q]&&kobj.k[p]<kobj.d[p]&&kobj.k[p]>thr) score+=2;
+    }
+    if (entryIds.indexOf('s_price_low') >= 0) {
+      var period=pr('s_price_low','period',20), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
+    if (entryIds.indexOf('s_wr_overbought') >= 0) {
+      var period=pr('s_wr_overbought','period',14), thr=pr('s_wr_overbought','threshold',-20);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]>thr&&wrv[p]<=thr) score+=2;
+    }
+    if (entryIds.indexOf('s_turtle_low') >= 0) {
+      var period=pr('s_turtle_low','period',20), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
     return score;
   }
 
@@ -590,36 +764,53 @@ var SignalEngine = (function() {
     if (i < 1) return 0;
     var c = data.closes;
     var p = i, q = i - 1;
-    var e = strategies.exit || [];
+    var exitIds = (strategies.exit||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({exit:strategies.exit}, id, key, def); };
 
-    if (e.indexOf("s_ma_golden")     >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] <= ind.ma20[q] && ind.ma5[p] > ind.ma20[p]) score += 2;
-
-    if (e.indexOf("s_price_above_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] <= ind.ma20[q] && c[p] > ind.ma20[p]) score += 1;
-
-    if (e.indexOf("s_rsi_oversold")  >= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p]))
-      if (ind.rsi14[q] < 30 && ind.rsi14[p] >= 30) score += 3;
-
-    if (e.indexOf("s_macd_golden")   >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] < 0 && ind.macd.hist[p] >= 0) score += 2;
-
-    if (e.indexOf("s_boll_lower")    >= 0 && v(ind.boll20.lower[p]))
-      if (c[p] <= ind.boll20.lower[p]) score += 1;
-
-    if (e.indexOf("s_kd_golden")     >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] <= ind.kd9.d[q] && ind.kd9.k[p] > ind.kd9.d[p] && ind.kd9.k[p] < 50) score += 2;
-
-    if (e.indexOf("s_price_high")    >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
-    if (e.indexOf("s_wr_oversold")   >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] < -80 && ind.wr14[p] >= -80) score += 2;
-
-    if (e.indexOf("s_turtle_high")   >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
+    if (exitIds.indexOf('s_ma_golden') >= 0) {
+      var fast=pr('s_ma_golden','fast',5), slow=pr('s_ma_golden','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])) if (mf[q]<=ms[q]&&mf[p]>ms[p]) score+=2;
+    }
+    if (exitIds.indexOf('s_price_above_ma') >= 0) {
+      var period=pr('s_price_above_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]<=ma[q]&&c[p]>ma[p]) score+=1;
+    }
+    if (exitIds.indexOf('s_rsi_oversold') >= 0) {
+      var period=pr('s_rsi_oversold','period',14), thr=pr('s_rsi_oversold','threshold',30);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) if (r[q]<thr&&r[p]>=thr) score+=3;
+    }
+    if (exitIds.indexOf('s_macd_golden') >= 0) {
+      var fast=pr('s_macd_golden','fast',12), slow=pr('s_macd_golden','slow',26), sig=pr('s_macd_golden','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]<0&&m.hist[p]>=0) score+=2;
+    }
+    if (exitIds.indexOf('s_boll_lower') >= 0) {
+      var period=pr('s_boll_lower','period',20), mult=pr('s_boll_lower','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.lower[p])) if (c[p]<=b.lower[p]) score+=1;
+    }
+    if (exitIds.indexOf('s_kd_golden') >= 0) {
+      var period=pr('s_kd_golden','period',9), thr=pr('s_kd_golden','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]<=kobj.d[q]&&kobj.k[p]>kobj.d[p]&&kobj.k[p]<thr) score+=2;
+    }
+    if (exitIds.indexOf('s_price_high') >= 0) {
+      var period=pr('s_price_high','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
+    if (exitIds.indexOf('s_wr_oversold') >= 0) {
+      var period=pr('s_wr_oversold','period',14), thr=pr('s_wr_oversold','threshold',-80);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]<thr&&wrv[p]>=thr) score+=2;
+    }
+    if (exitIds.indexOf('s_turtle_high') >= 0) {
+      var period=pr('s_turtle_high','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
     return score;
   }
 
@@ -831,8 +1022,14 @@ var ExecutionEngine = (function() {
     var longStrat  = { entry: config.longEntry  || [], exit: config.longExit  || [] };
     var shortStrat = { entry: config.shortEntry || [], exit: config.shortExit || [] };
 
-    // Step 1: 預計算所有指標
-    var ind = Indicators.precompute(data);
+    // Step 1: 預計算所有指標（傳入策略設定讓 precompute 動態計算）
+    var stratConfig = {
+      longEntry:  config.longEntry  || [],
+      longExit:   config.longExit   || [],
+      shortEntry: config.shortEntry || [],
+      shortExit:  config.shortExit  || [],
+    };
+    var ind = Indicators.precompute(data, stratConfig);
 
     // Step 2: 預計算所有訊號（sigDay 為基準）
     var sigs = SignalEngine.generate(data, ind, longStrat, shortStrat, shortEnabled);
@@ -1779,21 +1976,76 @@ var Indicators = (function() {
     return { upper: upper, lower: lower };
   }
 
-  // Precompute all indicators for a dataset
-  function precompute(data) {
+  // ── 動態指標計算（含參數，帶 cache 避免重複）────────────────
+  function precompute(data, stratConfig) {
     var c = data.closes, h = data.highs, l = data.lows, v = data.volumes;
+    var cache = {};
+
+    function getSMA(p)  { var k='sma'+p;  return cache[k]||(cache[k]=sma(c,p));   }
+    function getEMA(p)  { var k='ema'+p;  return cache[k]||(cache[k]=ema(c,p));   }
+    function getRSI(p)  { var k='rsi'+p;  return cache[k]||(cache[k]=rsi(c,p));   }
+    function getKD(p)   { var k='kd'+p;   return cache[k]||(cache[k]=kd(h,l,c,p)); }
+    function getBoll(p,m){ var k='boll'+p+'_'+m; return cache[k]||(cache[k]=boll(c,p,m)); }
+    function getWR(p)   { var k='wr'+p;   return cache[k]||(cache[k]=wr(h,l,c,p)); }
+    function getDC(p)   { var k='dc'+p;   return cache[k]||(cache[k]=donchian(h,l,p)); }
+    function getVolSMA(p){ var k='vsma'+p; return cache[k]||(cache[k]=sma(v,p));  }
+    function getMACD(f,s,sig) {
+      var k='macd'+f+'_'+s+'_'+sig;
+      return cache[k]||(cache[k]=macd(c,f,s,sig));
+    }
+
+    // 從 stratConfig 萃取所有用到的參數，動態計算所需指標
+    var sc = stratConfig || {};
+    var allStrats = []
+      .concat(sc.longEntry||[]).concat(sc.longExit||[])
+      .concat(sc.shortEntry||[]).concat(sc.shortExit||[]);
+
+    // 預先計算每個策略需要的指標
+    allStrats.forEach(function(s) {
+      var p = s.params || {};
+      var id = s.id || s;
+      // MA類
+      if (/ma_golden|ma_death|s_ma_golden|s_ma_death/.test(id)) {
+        getSMA(p.fast||5); getSMA(p.slow||20);
+      }
+      if (/price_above_ma|price_below_ma|s_price/.test(id)) { getSMA(p.period||20); }
+      // RSI
+      if (/rsi/.test(id)) { getRSI(p.period||14); }
+      // MACD
+      if (/macd/.test(id)) { getMACD(p.fast||12, p.slow||26, p.signal||9); }
+      // Boll
+      if (/boll/.test(id)) { getBoll(p.period||20, p.mult||2); }
+      // KD
+      if (/kd/.test(id)) { getKD(p.period||9); }
+      // Volume
+      if (/vol_surge/.test(id)) { getVolSMA(p.volPeriod||20); }
+      // WR
+      if (/wr/.test(id)) { getWR(p.period||14); }
+      // Donchian / Turtle
+      if (/price_high|turtle_break|s_price_high|s_turtle_high/.test(id)) { getDC(p.period||20); }
+      if (/price_low|turtle_stop|s_price_low|s_turtle_low/.test(id)) { getDC(p.period||20); }
+    });
+
+    // 永遠預計算幾個基本的（給今日訊號UI用）
+    getSMA(5); getSMA(20); getRSI(14); getMACD(12,26,9); getBoll(20,2); getKD(9);
+    getWR(14); getDC(20); getDC(10); getVolSMA(20);
+
+    // 回傳 accessor 物件（惰性計算）
     return {
-      ma5:   sma(c, 5),   ma10:  sma(c, 10),  ma20:  sma(c, 20),
-      ma60:  sma(c, 60),  ma120: sma(c, 120),  ma200: sma(c, 200),
-      ema20: ema(c, 20),  ema200:ema(c, 200),
-      rsi14: rsi(c, 14),
-      kd9:   kd(h, l, c, 9),
-      macd:  macd(c, 12, 26, 9),
-      boll20:boll(c, 20, 2),
-      wr14:  wr(h, l, c, 14),
-      dc20:  donchian(h, l, 20),
-      dc10:  donchian(h, l, 10),
-      vol20: sma(v, 20),
+      // 基本快捷 key（兼容舊 code）
+      ma5:   getSMA(5),  ma10: getSMA(10), ma20: getSMA(20),
+      ma60:  getSMA(60), ma120:getSMA(120),ma200:getSMA(200),
+      ema20: getEMA(20), ema200:getEMA(200),
+      rsi14: getRSI(14),
+      kd9:   getKD(9),
+      macd:  getMACD(12,26,9),
+      boll20:getBoll(20,2),
+      wr14:  getWR(14),
+      dc20:  getDC(20),
+      dc10:  getDC(10),
+      vol20: getVolSMA(20),
+      // 動態取得函式
+      getSMA, getEMA, getRSI, getKD, getBoll, getWR, getDC, getVolSMA, getMACD,
     };
   }
 
@@ -1815,45 +2067,88 @@ var SignalEngine = (function() {
   // 安全比較（NaN-safe）
   function v(x) { return !isNaN(x) && x != null; }
 
+  // ── 從策略陣列取得某策略的參數（物件或預設值）───────────
+  function getP(strategies, stratId, key, def) {
+    var list = strategies.entry || strategies.exit || [];
+    var found = null;
+    list.forEach(function(s) {
+      if ((s.id||s) === stratId) found = s.params || {};
+    });
+    if (!found) return def;
+    return (found[key] != null) ? found[key] : def;
+  }
+
   function scoreLongEntry(i, ind, data, strategies) {
     if (i < 1) return 0;
     var c = data.closes, vols = data.volumes;
-    var p = i, q = i - 1;          // p=今, q=昨（都是 sigDay 及之前）
-    var e = strategies.entry || [];
+    var p = i, q = i - 1;
+    // 支援 string[] 或 {id, params}[] 兩種格式
+    var entryIds = (strategies.entry||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({entry:strategies.entry}, id, key, def); };
 
-    if (e.indexOf("ma_golden")     >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] <= ind.ma20[q] && ind.ma5[p] > ind.ma20[p]) score += 2;
-
-    if (e.indexOf("price_above_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] <= ind.ma20[q] && c[p] > ind.ma20[p]) score += 1;
-
-    if (e.indexOf("rsi_oversold")  >= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p])) {
-      if (ind.rsi14[q] < 30 && ind.rsi14[p] >= 30) score += 3;
-      else if (ind.rsi14[p] < 25)                   score += 1;
+    // 均線黃金交叉
+    if (entryIds.indexOf('ma_golden') >= 0) {
+      var fast=pr('ma_golden','fast',5), slow=pr('ma_golden','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])&&v(mf[p])&&v(ms[p]))
+        if (mf[q]<=ms[q] && mf[p]>ms[p]) score+=2;
     }
-
-    if (e.indexOf("macd_golden")   >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] < 0 && ind.macd.hist[p] >= 0) score += 2;
-
-    if (e.indexOf("boll_break")    >= 0 && v(ind.boll20.lower[p]))
-      if (c[q] <= ind.boll20.lower[q] && c[p] > ind.boll20.lower[p]) score += 2;
-
-    if (e.indexOf("kd_golden")     >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] <= ind.kd9.d[q] && ind.kd9.k[p] > ind.kd9.d[p] && ind.kd9.k[p] < 50) score += 2;
-
-    if (e.indexOf("vol_surge")     >= 0 && v(ind.vol20[p]))
-      if (vols[p] > ind.vol20[p] * 2.0 && c[p] > c[q]) score += 1;
-
-    if (e.indexOf("price_high")    >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
-    if (e.indexOf("wr_oversold")   >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] < -80 && ind.wr14[p] >= -80) score += 2;
-
-    if (e.indexOf("turtle_break")  >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
+    // 價格突破均線
+    if (entryIds.indexOf('price_above_ma') >= 0) {
+      var period=pr('price_above_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]<=ma[q] && c[p]>ma[p]) score+=1;
+    }
+    // RSI超賣
+    if (entryIds.indexOf('rsi_oversold') >= 0) {
+      var period=pr('rsi_oversold','period',14), thr=pr('rsi_oversold','threshold',30);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) {
+        if (r[q]<thr && r[p]>=thr) score+=3;
+        else if (r[p]<thr-5)       score+=1;
+      }
+    }
+    // MACD黃金交叉
+    if (entryIds.indexOf('macd_golden') >= 0) {
+      var fast=pr('macd_golden','fast',12), slow=pr('macd_golden','slow',26), sig=pr('macd_golden','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]<0&&m.hist[p]>=0) score+=2;
+    }
+    // 布林突破下軌
+    if (entryIds.indexOf('boll_break') >= 0) {
+      var period=pr('boll_break','period',20), mult=pr('boll_break','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.lower[p])) if (c[q]<=b.lower[q]&&c[p]>b.lower[p]) score+=2;
+    }
+    // KD黃金交叉
+    if (entryIds.indexOf('kd_golden') >= 0) {
+      var period=pr('kd_golden','period',9), thr=pr('kd_golden','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]<=kobj.d[q]&&kobj.k[p]>kobj.d[p]&&kobj.k[p]<thr) score+=2;
+    }
+    // 成交量爆增
+    if (entryIds.indexOf('vol_surge') >= 0) {
+      var vp=pr('vol_surge','volPeriod',20), vm=pr('vol_surge','volMult',2.0);
+      var vs=ind.getVolSMA(vp);
+      if (v(vs[p])) if (vols[p]>vs[p]*vm&&c[p]>c[q]) score+=1;
+    }
+    // 突破N日前高
+    if (entryIds.indexOf('price_high') >= 0) {
+      var period=pr('price_high','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
+    // 威廉%R超賣
+    if (entryIds.indexOf('wr_oversold') >= 0) {
+      var period=pr('wr_oversold','period',14), thr=pr('wr_oversold','threshold',-80);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]<thr&&wrv[p]>=thr) score+=2;
+    }
+    // 海龜突破
+    if (entryIds.indexOf('turtle_break') >= 0) {
+      var period=pr('turtle_break','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
     return score;
   }
 
@@ -1861,38 +2156,66 @@ var SignalEngine = (function() {
     if (i < 1) return 0;
     var c = data.closes;
     var p = i, q = i - 1;
-    var e = strategies.exit || [];
+    var exitIds = (strategies.exit||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({exit:strategies.exit}, id, key, def); };
 
-    if (e.indexOf("ma_death")      >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] >= ind.ma20[q] && ind.ma5[p] < ind.ma20[p]) score += 2;
-
-    if (e.indexOf("price_below_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] >= ind.ma20[q] && c[p] < ind.ma20[p]) score += 1;
-
-    if (e.indexOf("rsi_overbought")>= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p])) {
-      if (ind.rsi14[q] > 70 && ind.rsi14[p] <= 70) score += 3;
-      else if (ind.rsi14[p] > 80)                    score += 1;
+    // 均線死亡交叉
+    if (exitIds.indexOf('ma_death') >= 0) {
+      var fast=pr('ma_death','fast',5), slow=pr('ma_death','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])) if (mf[q]>=ms[q]&&mf[p]<ms[p]) score+=2;
     }
-
-    if (e.indexOf("macd_death")    >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] > 0 && ind.macd.hist[p] <= 0) score += 2;
-
-    if (e.indexOf("boll_upper")    >= 0 && v(ind.boll20.upper[p]))
-      if (c[p] >= ind.boll20.upper[p]) score += 1;
-
-    if (e.indexOf("kd_death")      >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] >= ind.kd9.d[q] && ind.kd9.k[p] < ind.kd9.d[p] && ind.kd9.k[p] > 50) score += 2;
-
-    if (e.indexOf("price_low")     >= 0 && v(ind.dc20.lower[q]))
-      if (c[p] < ind.dc20.lower[q]) score += 2;
-
-    if (e.indexOf("wr_overbought") >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] > -20 && ind.wr14[p] <= -20) score += 2;
-
-    if (e.indexOf("turtle_stop")   >= 0 && v(ind.dc10.lower[q]))
-      if (c[p] < ind.dc10.lower[q]) score += 2;
-
+    // 跌破均線
+    if (exitIds.indexOf('price_below_ma') >= 0) {
+      var period=pr('price_below_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]>=ma[q]&&c[p]<ma[p]) score+=1;
+    }
+    // RSI超買回落
+    if (exitIds.indexOf('rsi_overbought') >= 0) {
+      var period=pr('rsi_overbought','period',14), thr=pr('rsi_overbought','threshold',70);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) {
+        if (r[q]>thr&&r[p]<=thr) score+=3;
+        else if (r[p]>thr+10)    score+=1;
+      }
+    }
+    // MACD死亡交叉
+    if (exitIds.indexOf('macd_death') >= 0) {
+      var fast=pr('macd_death','fast',12), slow=pr('macd_death','slow',26), sig=pr('macd_death','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]>0&&m.hist[p]<=0) score+=2;
+    }
+    // 觸碰布林上軌
+    if (exitIds.indexOf('boll_upper') >= 0) {
+      var period=pr('boll_upper','period',20), mult=pr('boll_upper','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.upper[p])) if (c[p]>=b.upper[p]) score+=1;
+    }
+    // KD死亡交叉
+    if (exitIds.indexOf('kd_death') >= 0) {
+      var period=pr('kd_death','period',9), thr=pr('kd_death','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]>=kobj.d[q]&&kobj.k[p]<kobj.d[p]&&kobj.k[p]>thr) score+=2;
+    }
+    // 跌破N日前低
+    if (exitIds.indexOf('price_low') >= 0) {
+      var period=pr('price_low','period',20), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
+    // 威廉%R超買
+    if (exitIds.indexOf('wr_overbought') >= 0) {
+      var period=pr('wr_overbought','period',14), thr=pr('wr_overbought','threshold',-20);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]>thr&&wrv[p]<=thr) score+=2;
+    }
+    // 海龜停損N日低
+    if (exitIds.indexOf('turtle_stop') >= 0) {
+      var period=pr('turtle_stop','period',10), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
+    // 移動停損（在 ExecutionEngine 處理，這裡不計分）
     return score;
   }
 
@@ -1900,37 +2223,53 @@ var SignalEngine = (function() {
     if (i < 1) return 0;
     var c = data.closes;
     var p = i, q = i - 1;
-    var e = strategies.entry || [];
+    var entryIds = (strategies.entry||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({entry:strategies.entry}, id, key, def); };
 
-    if (e.indexOf("s_ma_death")      >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] >= ind.ma20[q] && ind.ma5[p] < ind.ma20[p]) score += 2;
-
-    if (e.indexOf("s_price_below_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] >= ind.ma20[q] && c[p] < ind.ma20[p]) score += 1;
-
-    if (e.indexOf("s_rsi_overbought")>= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p])) {
-      if (ind.rsi14[q] > 70 && ind.rsi14[p] <= 70) score += 3;
+    if (entryIds.indexOf('s_ma_death') >= 0) {
+      var fast=pr('s_ma_death','fast',5), slow=pr('s_ma_death','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])) if (mf[q]>=ms[q]&&mf[p]<ms[p]) score+=2;
     }
-
-    if (e.indexOf("s_macd_death")    >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] > 0 && ind.macd.hist[p] <= 0) score += 2;
-
-    if (e.indexOf("s_boll_upper")    >= 0 && v(ind.boll20.upper[p]))
-      if (c[p] >= ind.boll20.upper[p]) score += 1;
-
-    if (e.indexOf("s_kd_death")      >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] >= ind.kd9.d[q] && ind.kd9.k[p] < ind.kd9.d[p] && ind.kd9.k[p] > 50) score += 2;
-
-    if (e.indexOf("s_price_low")     >= 0 && v(ind.dc20.lower[q]))
-      if (c[p] < ind.dc20.lower[q]) score += 2;
-
-    if (e.indexOf("s_wr_overbought") >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] > -20 && ind.wr14[p] <= -20) score += 2;
-
-    if (e.indexOf("s_turtle_low")    >= 0 && v(ind.dc20.lower[q]))
-      if (c[p] < ind.dc20.lower[q]) score += 2;
-
+    if (entryIds.indexOf('s_price_below_ma') >= 0) {
+      var period=pr('s_price_below_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]>=ma[q]&&c[p]<ma[p]) score+=1;
+    }
+    if (entryIds.indexOf('s_rsi_overbought') >= 0) {
+      var period=pr('s_rsi_overbought','period',14), thr=pr('s_rsi_overbought','threshold',70);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) if (r[q]>thr&&r[p]<=thr) score+=3;
+    }
+    if (entryIds.indexOf('s_macd_death') >= 0) {
+      var fast=pr('s_macd_death','fast',12), slow=pr('s_macd_death','slow',26), sig=pr('s_macd_death','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]>0&&m.hist[p]<=0) score+=2;
+    }
+    if (entryIds.indexOf('s_boll_upper') >= 0) {
+      var period=pr('s_boll_upper','period',20), mult=pr('s_boll_upper','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.upper[p])) if (c[p]>=b.upper[p]) score+=1;
+    }
+    if (entryIds.indexOf('s_kd_death') >= 0) {
+      var period=pr('s_kd_death','period',9), thr=pr('s_kd_death','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]>=kobj.d[q]&&kobj.k[p]<kobj.d[p]&&kobj.k[p]>thr) score+=2;
+    }
+    if (entryIds.indexOf('s_price_low') >= 0) {
+      var period=pr('s_price_low','period',20), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
+    if (entryIds.indexOf('s_wr_overbought') >= 0) {
+      var period=pr('s_wr_overbought','period',14), thr=pr('s_wr_overbought','threshold',-20);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]>thr&&wrv[p]<=thr) score+=2;
+    }
+    if (entryIds.indexOf('s_turtle_low') >= 0) {
+      var period=pr('s_turtle_low','period',20), dc=ind.getDC(period);
+      if (v(dc.lower[q])) if (c[p]<dc.lower[q]) score+=2;
+    }
     return score;
   }
 
@@ -1938,36 +2277,53 @@ var SignalEngine = (function() {
     if (i < 1) return 0;
     var c = data.closes;
     var p = i, q = i - 1;
-    var e = strategies.exit || [];
+    var exitIds = (strategies.exit||[]).map(function(s){ return s.id||s; });
     var score = 0;
+    var pr = function(id, key, def){ return getP({exit:strategies.exit}, id, key, def); };
 
-    if (e.indexOf("s_ma_golden")     >= 0 && v(ind.ma5[q]) && v(ind.ma20[q]))
-      if (ind.ma5[q] <= ind.ma20[q] && ind.ma5[p] > ind.ma20[p]) score += 2;
-
-    if (e.indexOf("s_price_above_ma")>= 0 && v(ind.ma20[p]))
-      if (c[q] <= ind.ma20[q] && c[p] > ind.ma20[p]) score += 1;
-
-    if (e.indexOf("s_rsi_oversold")  >= 0 && v(ind.rsi14[q]) && v(ind.rsi14[p]))
-      if (ind.rsi14[q] < 30 && ind.rsi14[p] >= 30) score += 3;
-
-    if (e.indexOf("s_macd_golden")   >= 0 && v(ind.macd.hist[q]) && v(ind.macd.hist[p]))
-      if (ind.macd.hist[q] < 0 && ind.macd.hist[p] >= 0) score += 2;
-
-    if (e.indexOf("s_boll_lower")    >= 0 && v(ind.boll20.lower[p]))
-      if (c[p] <= ind.boll20.lower[p]) score += 1;
-
-    if (e.indexOf("s_kd_golden")     >= 0 && v(ind.kd9.k[q]) && v(ind.kd9.d[q]))
-      if (ind.kd9.k[q] <= ind.kd9.d[q] && ind.kd9.k[p] > ind.kd9.d[p] && ind.kd9.k[p] < 50) score += 2;
-
-    if (e.indexOf("s_price_high")    >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
-    if (e.indexOf("s_wr_oversold")   >= 0 && v(ind.wr14[q]) && v(ind.wr14[p]))
-      if (ind.wr14[q] < -80 && ind.wr14[p] >= -80) score += 2;
-
-    if (e.indexOf("s_turtle_high")   >= 0 && v(ind.dc20.upper[q]))
-      if (c[p] > ind.dc20.upper[q]) score += 2;
-
+    if (exitIds.indexOf('s_ma_golden') >= 0) {
+      var fast=pr('s_ma_golden','fast',5), slow=pr('s_ma_golden','slow',20);
+      var mf=ind.getSMA(fast), ms=ind.getSMA(slow);
+      if (v(mf[q])&&v(ms[q])) if (mf[q]<=ms[q]&&mf[p]>ms[p]) score+=2;
+    }
+    if (exitIds.indexOf('s_price_above_ma') >= 0) {
+      var period=pr('s_price_above_ma','period',20), ma=ind.getSMA(period);
+      if (v(ma[p])) if (c[q]<=ma[q]&&c[p]>ma[p]) score+=1;
+    }
+    if (exitIds.indexOf('s_rsi_oversold') >= 0) {
+      var period=pr('s_rsi_oversold','period',14), thr=pr('s_rsi_oversold','threshold',30);
+      var r=ind.getRSI(period);
+      if (v(r[q])&&v(r[p])) if (r[q]<thr&&r[p]>=thr) score+=3;
+    }
+    if (exitIds.indexOf('s_macd_golden') >= 0) {
+      var fast=pr('s_macd_golden','fast',12), slow=pr('s_macd_golden','slow',26), sig=pr('s_macd_golden','signal',9);
+      var m=ind.getMACD(fast,slow,sig);
+      if (v(m.hist[q])&&v(m.hist[p])) if (m.hist[q]<0&&m.hist[p]>=0) score+=2;
+    }
+    if (exitIds.indexOf('s_boll_lower') >= 0) {
+      var period=pr('s_boll_lower','period',20), mult=pr('s_boll_lower','mult',2);
+      var b=ind.getBoll(period,mult);
+      if (v(b.lower[p])) if (c[p]<=b.lower[p]) score+=1;
+    }
+    if (exitIds.indexOf('s_kd_golden') >= 0) {
+      var period=pr('s_kd_golden','period',9), thr=pr('s_kd_golden','threshold',50);
+      var kobj=ind.getKD(period);
+      if (v(kobj.k[q])&&v(kobj.d[q]))
+        if (kobj.k[q]<=kobj.d[q]&&kobj.k[p]>kobj.d[p]&&kobj.k[p]<thr) score+=2;
+    }
+    if (exitIds.indexOf('s_price_high') >= 0) {
+      var period=pr('s_price_high','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
+    if (exitIds.indexOf('s_wr_oversold') >= 0) {
+      var period=pr('s_wr_oversold','period',14), thr=pr('s_wr_oversold','threshold',-80);
+      var wrv=ind.getWR(period);
+      if (v(wrv[q])&&v(wrv[p])) if (wrv[q]<thr&&wrv[p]>=thr) score+=2;
+    }
+    if (exitIds.indexOf('s_turtle_high') >= 0) {
+      var period=pr('s_turtle_high','period',20), dc=ind.getDC(period);
+      if (v(dc.upper[q])) if (c[p]>dc.upper[q]) score+=2;
+    }
     return score;
   }
 
@@ -2179,8 +2535,14 @@ var ExecutionEngine = (function() {
     var longStrat  = { entry: config.longEntry  || [], exit: config.longExit  || [] };
     var shortStrat = { entry: config.shortEntry || [], exit: config.shortExit || [] };
 
-    // Step 1: 預計算所有指標
-    var ind = Indicators.precompute(data);
+    // Step 1: 預計算所有指標（傳入策略設定讓 precompute 動態計算）
+    var stratConfig = {
+      longEntry:  config.longEntry  || [],
+      longExit:   config.longExit   || [],
+      shortEntry: config.shortEntry || [],
+      shortExit:  config.shortExit  || [],
+    };
+    var ind = Indicators.precompute(data, stratConfig);
 
     // Step 2: 預計算所有訊號（sigDay 為基準）
     var sigs = SignalEngine.generate(data, ind, longStrat, shortStrat, shortEnabled);
@@ -2670,69 +3032,268 @@ function updateThemeIcon(isDark) {
 })();
 
 // ── 策略定義 ─────────────────────────────────────────────────
+// ── 策略定義（含參數規格）──────────────────────────────────
+// params: 每個參數的 key, label, default, min, max, step
 var LONG_ENTRY = [
-  {id:'ma_golden',     label:'均線黃金交叉'},
-  {id:'price_above_ma',label:'突破均線'},
-  {id:'rsi_oversold',  label:'RSI超賣(<30)'},
-  {id:'macd_golden',   label:'MACD黃金交叉'},
-  {id:'boll_break',    label:'布林突破下軌'},
-  {id:'kd_golden',     label:'KD黃金交叉'},
-  {id:'vol_surge',     label:'成交量爆增'},
-  {id:'price_high',    label:'突破前高20日'},
-  {id:'wr_oversold',   label:'威廉超賣'},
-  {id:'turtle_break',  label:'海龜突破20日'},
+  {id:'ma_golden',      label:'均線黃金交叉',    params:[
+    {key:'fast', label:'短期SMA', def:5,  min:2,  max:60,  step:1},
+    {key:'slow', label:'長期SMA', def:20, min:5,  max:250, step:1},
+  ]},
+  {id:'price_above_ma', label:'價格突破均線',    params:[
+    {key:'period', label:'均線週期', def:20, min:5, max:250, step:1},
+  ]},
+  {id:'rsi_oversold',   label:'RSI超賣反彈',     params:[
+    {key:'period',    label:'RSI週期',  def:14, min:2,  max:50,  step:1},
+    {key:'threshold', label:'超賣閾值', def:30, min:5,  max:50,  step:1},
+  ]},
+  {id:'macd_golden',    label:'MACD黃金交叉',    params:[
+    {key:'fast',   label:'快線EMA', def:12, min:2,  max:50,  step:1},
+    {key:'slow',   label:'慢線EMA', def:26, min:5,  max:100, step:1},
+    {key:'signal', label:'訊號線',  def:9,  min:2,  max:30,  step:1},
+  ]},
+  {id:'boll_break',     label:'布林突破下軌',    params:[
+    {key:'period', label:'均線週期', def:20, min:5,  max:100, step:1},
+    {key:'mult',   label:'標準差倍數', def:2.0, min:0.5, max:4.0, step:0.1},
+  ]},
+  {id:'kd_golden',      label:'KD黃金交叉',      params:[
+    {key:'period',    label:'KD週期',   def:9,  min:3,  max:30,  step:1},
+    {key:'threshold', label:'K值上限',  def:50, min:20, max:80,  step:5},
+  ]},
+  {id:'vol_surge',      label:'成交量爆增',       params:[
+    {key:'volPeriod', label:'量均週期', def:20,  min:5,  max:60,  step:1},
+    {key:'volMult',   label:'倍數',     def:2.0, min:1.2, max:5.0, step:0.1},
+  ]},
+  {id:'price_high',     label:'突破N日前高',     params:[
+    {key:'period', label:'回看天數', def:20, min:5, max:120, step:1},
+  ]},
+  {id:'wr_oversold',    label:'威廉%R超賣',      params:[
+    {key:'period',    label:'WR週期',   def:14,  min:3,  max:50,  step:1},
+    {key:'threshold', label:'超賣閾值', def:-80, min:-95, max:-50, step:1},
+  ]},
+  {id:'turtle_break',   label:'海龜突破N日高',   params:[
+    {key:'period', label:'突破天數', def:20, min:5, max:120, step:1},
+  ]},
 ];
+
 var LONG_EXIT = [
-  {id:'ma_death',       label:'均線死亡交叉'},
-  {id:'price_below_ma', label:'跌破均線'},
-  {id:'rsi_overbought', label:'RSI超買(>70)'},
-  {id:'macd_death',     label:'MACD死亡交叉'},
-  {id:'boll_upper',     label:'觸碰布林上軌'},
-  {id:'kd_death',       label:'KD死亡交叉'},
-  {id:'price_low',      label:'跌破前低20日'},
-  {id:'wr_overbought',  label:'威廉超買'},
-  {id:'turtle_stop',    label:'海龜停損10日'},
-  {id:'trailing_stop',  label:'移動停損5%'},
+  {id:'ma_death',        label:'均線死亡交叉',   params:[
+    {key:'fast', label:'短期SMA', def:5,  min:2,  max:60,  step:1},
+    {key:'slow', label:'長期SMA', def:20, min:5,  max:250, step:1},
+  ]},
+  {id:'price_below_ma',  label:'價格跌破均線',   params:[
+    {key:'period', label:'均線週期', def:20, min:5, max:250, step:1},
+  ]},
+  {id:'rsi_overbought',  label:'RSI超買回落',    params:[
+    {key:'period',    label:'RSI週期',  def:14, min:2,  max:50, step:1},
+    {key:'threshold', label:'超買閾值', def:70, min:50, max:95, step:1},
+  ]},
+  {id:'macd_death',      label:'MACD死亡交叉',   params:[
+    {key:'fast',   label:'快線EMA', def:12, min:2,  max:50,  step:1},
+    {key:'slow',   label:'慢線EMA', def:26, min:5,  max:100, step:1},
+    {key:'signal', label:'訊號線',  def:9,  min:2,  max:30,  step:1},
+  ]},
+  {id:'boll_upper',      label:'觸碰布林上軌',   params:[
+    {key:'period', label:'均線週期',   def:20,  min:5,  max:100, step:1},
+    {key:'mult',   label:'標準差倍數', def:2.0, min:0.5, max:4.0, step:0.1},
+  ]},
+  {id:'kd_death',        label:'KD死亡交叉',     params:[
+    {key:'period',    label:'KD週期',   def:9,  min:3,  max:30, step:1},
+    {key:'threshold', label:'K值下限',  def:50, min:20, max:80, step:5},
+  ]},
+  {id:'price_low',       label:'跌破N日前低',    params:[
+    {key:'period', label:'回看天數', def:20, min:5, max:120, step:1},
+  ]},
+  {id:'wr_overbought',   label:'威廉%R超買',     params:[
+    {key:'period',    label:'WR週期',   def:14,  min:3,  max:50, step:1},
+    {key:'threshold', label:'超買閾值', def:-20, min:-50, max:-5, step:1},
+  ]},
+  {id:'turtle_stop',     label:'海龜停損N日低',  params:[
+    {key:'period', label:'停損天數', def:10, min:3, max:60, step:1},
+  ]},
+  {id:'trailing_stop',   label:'移動停損%',      params:[
+    {key:'pct', label:'回撤%', def:5, min:1, max:30, step:0.5},
+  ]},
 ];
+
 var SHORT_ENTRY = [
-  {id:'s_ma_death',       label:'均線死亡交叉'},
-  {id:'s_price_below_ma', label:'跌破均線'},
-  {id:'s_rsi_overbought', label:'RSI超買(>70)'},
-  {id:'s_macd_death',     label:'MACD死亡交叉'},
-  {id:'s_boll_upper',     label:'觸碰布林上軌'},
-  {id:'s_kd_death',       label:'KD死亡交叉'},
-  {id:'s_price_low',      label:'跌破前低20日'},
-  {id:'s_wr_overbought',  label:'威廉超買'},
-  {id:'s_turtle_low',     label:'海龜突破低點'},
+  {id:'s_ma_death',        label:'均線死亡交叉', params:[
+    {key:'fast', label:'短期SMA', def:5,  min:2,  max:60,  step:1},
+    {key:'slow', label:'長期SMA', def:20, min:5,  max:250, step:1},
+  ]},
+  {id:'s_price_below_ma',  label:'價格跌破均線', params:[
+    {key:'period', label:'均線週期', def:20, min:5, max:250, step:1},
+  ]},
+  {id:'s_rsi_overbought',  label:'RSI超買回落',  params:[
+    {key:'period',    label:'RSI週期',  def:14, min:2, max:50, step:1},
+    {key:'threshold', label:'超買閾值', def:70, min:50, max:95, step:1},
+  ]},
+  {id:'s_macd_death',      label:'MACD死亡交叉', params:[
+    {key:'fast',   label:'快線EMA', def:12, min:2,  max:50,  step:1},
+    {key:'slow',   label:'慢線EMA', def:26, min:5,  max:100, step:1},
+    {key:'signal', label:'訊號線',  def:9,  min:2,  max:30,  step:1},
+  ]},
+  {id:'s_boll_upper',      label:'觸碰布林上軌', params:[
+    {key:'period', label:'均線週期',   def:20,  min:5,  max:100, step:1},
+    {key:'mult',   label:'標準差倍數', def:2.0, min:0.5, max:4.0, step:0.1},
+  ]},
+  {id:'s_kd_death',        label:'KD死亡交叉',   params:[
+    {key:'period',    label:'KD週期', def:9,  min:3, max:30, step:1},
+    {key:'threshold', label:'K值下限', def:50, min:20, max:80, step:5},
+  ]},
+  {id:'s_price_low',       label:'跌破N日前低',  params:[
+    {key:'period', label:'回看天數', def:20, min:5, max:120, step:1},
+  ]},
+  {id:'s_wr_overbought',   label:'威廉%R超買',   params:[
+    {key:'period',    label:'WR週期',   def:14,  min:3,  max:50, step:1},
+    {key:'threshold', label:'超買閾值', def:-20, min:-50, max:-5, step:1},
+  ]},
+  {id:'s_turtle_low',      label:'海龜突破N日低', params:[
+    {key:'period', label:'突破天數', def:20, min:5, max:120, step:1},
+  ]},
 ];
+
 var SHORT_EXIT = [
-  {id:'s_ma_golden',      label:'均線黃金交叉'},
-  {id:'s_price_above_ma', label:'突破均線'},
-  {id:'s_rsi_oversold',   label:'RSI超賣(<30)'},
-  {id:'s_macd_golden',    label:'MACD黃金交叉'},
-  {id:'s_boll_lower',     label:'觸碰布林下軌'},
-  {id:'s_kd_golden',      label:'KD黃金交叉'},
-  {id:'s_price_high',     label:'突破前高20日'},
-  {id:'s_wr_oversold',    label:'威廉超賣'},
-  {id:'s_turtle_high',    label:'海龜突破高點'},
-  {id:'s_trailing',       label:'移動停損5%'},
+  {id:'s_ma_golden',      label:'均線黃金交叉',  params:[
+    {key:'fast', label:'短期SMA', def:5,  min:2,  max:60,  step:1},
+    {key:'slow', label:'長期SMA', def:20, min:5,  max:250, step:1},
+  ]},
+  {id:'s_price_above_ma', label:'價格突破均線',  params:[
+    {key:'period', label:'均線週期', def:20, min:5, max:250, step:1},
+  ]},
+  {id:'s_rsi_oversold',   label:'RSI超賣反彈',   params:[
+    {key:'period',    label:'RSI週期',  def:14, min:2, max:50, step:1},
+    {key:'threshold', label:'超賣閾值', def:30, min:5, max:50, step:1},
+  ]},
+  {id:'s_macd_golden',    label:'MACD黃金交叉',  params:[
+    {key:'fast',   label:'快線EMA', def:12, min:2,  max:50,  step:1},
+    {key:'slow',   label:'慢線EMA', def:26, min:5,  max:100, step:1},
+    {key:'signal', label:'訊號線',  def:9,  min:2,  max:30,  step:1},
+  ]},
+  {id:'s_boll_lower',     label:'觸碰布林下軌',  params:[
+    {key:'period', label:'均線週期',   def:20,  min:5,  max:100, step:1},
+    {key:'mult',   label:'標準差倍數', def:2.0, min:0.5, max:4.0, step:0.1},
+  ]},
+  {id:'s_kd_golden',      label:'KD黃金交叉',    params:[
+    {key:'period',    label:'KD週期',  def:9,  min:3, max:30, step:1},
+    {key:'threshold', label:'K值上限', def:50, min:20, max:80, step:5},
+  ]},
+  {id:'s_price_high',     label:'突破N日前高',   params:[
+    {key:'period', label:'回看天數', def:20, min:5, max:120, step:1},
+  ]},
+  {id:'s_wr_oversold',    label:'威廉%R超賣',    params:[
+    {key:'period',    label:'WR週期',   def:14,  min:3,  max:50,  step:1},
+    {key:'threshold', label:'超賣閾值', def:-80, min:-95, max:-50, step:1},
+  ]},
+  {id:'s_turtle_high',    label:'海龜突破N日高', params:[
+    {key:'period', label:'突破天數', def:20, min:5, max:120, step:1},
+  ]},
+  {id:'s_trailing',       label:'移動停損%',     params:[
+    {key:'pct', label:'回撤%', def:5, min:1, max:30, step:0.5},
+  ]},
 ];
 var ALL_STRATS_MAP = {};
 LONG_ENTRY.concat(LONG_EXIT).concat(SHORT_ENTRY).concat(SHORT_EXIT).forEach(function(s){ ALL_STRATS_MAP[s.id]=s.label; });
+
+// 全域策略參數值 storage
+// stratParams[groupId][stratId][paramKey] = value
+var stratParams = {};
 
 function buildCheckGroup(id, items) {
   var c = document.getElementById(id);
   if (!c) return;
   c.innerHTML = '';
+  if (!stratParams[id]) stratParams[id] = {};
   items.forEach(function(item) {
+    // 初始化預設值
+    if (!stratParams[id][item.id]) {
+      stratParams[id][item.id] = {};
+      (item.params||[]).forEach(function(p){ stratParams[id][item.id][p.key] = p.def; });
+    }
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'strat-param-wrap';
+    wrapper.dataset.id = item.id;
+
+    // 勾選列
     var lbl = document.createElement('label');
     lbl.className = 'check-item';
     lbl.innerHTML = '<input type="checkbox" value="' + item.id + '"><span>' + item.label + '</span>';
-    lbl.querySelector('input').addEventListener('change', function() {
+    var cb = lbl.querySelector('input');
+    cb.addEventListener('change', function() {
       lbl.classList.toggle('on', this.checked);
+      var pRow = wrapper.querySelector('.param-row');
+      if (pRow) pRow.style.display = this.checked ? 'grid' : 'none';
     });
-    c.appendChild(lbl);
+    wrapper.appendChild(lbl);
+
+    // 參數列（預設隱藏，勾選後顯示）
+    if (item.params && item.params.length) {
+      var pRow = document.createElement('div');
+      pRow.className = 'param-row';
+      pRow.style.display = 'none';
+      item.params.forEach(function(p) {
+        var cell = document.createElement('div');
+        cell.className = 'param-cell';
+        cell.innerHTML = '<span class="param-label">' + p.label + '</span>'
+          + '<input class="param-input" type="number"'
+          + ' value="' + stratParams[id][item.id][p.key] + '"'
+          + ' min="' + p.min + '" max="' + p.max + '" step="' + p.step + '"'
+          + ' data-group="' + id + '" data-strat="' + item.id + '" data-key="' + p.key + '">';
+        cell.querySelector('input').addEventListener('change', function() {
+          var v = parseFloat(this.value);
+          if (isNaN(v)) v = p.def;
+          v = Math.min(Math.max(v, p.min), p.max);
+          this.value = v;
+          stratParams[this.dataset.group][this.dataset.strat][this.dataset.key] = v;
+        });
+        pRow.appendChild(cell);
+      });
+      wrapper.appendChild(pRow);
+    }
+
+    c.appendChild(wrapper);
   });
+}
+
+// 取得已勾選的策略 id 陣列（不含參數）
+function getSelected(gid) {
+  var r = [];
+  document.querySelectorAll('#'+gid+' input[type=checkbox]:checked').forEach(function(cb){ r.push(cb.value); });
+  return r;
+}
+
+// 取得已勾選策略的完整設定（含參數）
+function getSelectedWithParams(gid) {
+  var r = [];
+  document.querySelectorAll('#'+gid+' input[type=checkbox]:checked').forEach(function(cb) {
+    var id = cb.value;
+    var p  = (stratParams[gid] && stratParams[gid][id]) ? Object.assign({}, stratParams[gid][id]) : {};
+    r.push({ id: id, params: p });
+  });
+  return r;
+}
+
+// setChecked 需更新參數列顯示
+function setChecked(gid, ids, paramMap) {
+  document.querySelectorAll('#'+gid+' input[type=checkbox]').forEach(function(cb) {
+    var on = (ids||[]).indexOf(cb.value) >= 0;
+    cb.checked = on;
+    cb.closest('.check-item').classList.toggle('on', on);
+    var pRow = cb.closest('.strat-param-wrap') && cb.closest('.strat-param-wrap').querySelector('.param-row');
+    if (pRow) pRow.style.display = on ? 'grid' : 'none';
+  });
+  // 若有傳入 paramMap，更新參數值
+  if (paramMap && stratParams[gid]) {
+    Object.keys(paramMap).forEach(function(sid) {
+      if (!stratParams[gid][sid]) stratParams[gid][sid] = {};
+      Object.assign(stratParams[gid][sid], paramMap[sid]);
+      // 更新 input 顯示值
+      document.querySelectorAll('[data-group="'+gid+'"][data-strat="'+sid+'"]').forEach(function(inp) {
+        var v = stratParams[gid][sid][inp.dataset.key];
+        if (v != null) inp.value = v;
+      });
+    });
+  }
 }
 
 ['longEntryGroup','longExitGroup','shortEntryGroup','shortExitGroup','batchEntryGroup','batchExitGroup']
@@ -3055,13 +3616,16 @@ async function runBacktest() {
   var sellFee   = autoFee ? (isETF?0.2:0.4425) : +document.getElementById('sellFee').value;
 
   if (!code)  { alert('請輸入股票代號'); return done(); }
-  if (!getSelected('longEntryGroup').length) { alert('請至少選一個進場策略'); return done(); }
+  if (!longEntryIds.length) { alert('請至少選一個進場策略'); return done(); }
 
   var config = {
     code, capital, execType, positionBase:posBase, posSize, stopLoss, stopProfit,
     buyFee, sellFee, scoreThreshold:threshold,
-    longEntry:  getSelected('longEntryGroup'), longExit:  getSelected('longExitGroup'),
-    shortEnabled, shortEntry:getSelected('shortEntryGroup'), shortExit:getSelected('shortExitGroup'),
+    longEntry:  getSelectedWithParams('longEntryGroup'),
+    longExit:   getSelectedWithParams('longExitGroup'),
+    shortEnabled,
+    shortEntry: shortEnabled ? getSelectedWithParams('shortEntryGroup') : [],
+    shortExit:  shortEnabled ? getSelectedWithParams('shortExitGroup')  : [],
   };
   window._lastConfig = config;
 
@@ -3260,7 +3824,8 @@ function saveStrategy() {
     stopLoss:document.getElementById('stopLoss').value,
     stopProfit:document.getElementById('stopProfit').value,
     scoreThreshold:document.getElementById('scoreThreshold').value,
-    longEntry:getSelected('longEntryGroup'), longExit:getSelected('longExitGroup'),
+    longEntry:getSelectedWithParams('longEntryGroup'), longExit:getSelectedWithParams('longExitGroup'),
+    longEntryIds:getSelected('longEntryGroup'), longExitIds:getSelected('longExitGroup'),
     shortEnabled,
     cagr:   m?fmtP(m.cagr):'—', sharpe:m?fmtN(m.sharpe):'—',
     savedAt:new Date().toLocaleDateString('zh-TW'),
@@ -3291,8 +3856,15 @@ function loadStrategy(s) {
    ['posSize',s.posSize],['stopLoss',s.stopLoss],['stopProfit',s.stopProfit],
    ['scoreThreshold',s.scoreThreshold||1]
   ].forEach(function(pair){ var el=document.getElementById(pair[0]); if(el&&pair[1]!=null)el.value=pair[1]; });
-  setChecked('longEntryGroup',s.longEntry||[]);
-  setChecked('longExitGroup', s.longExit||[]);
+  // 支援舊版（string[]）和新版（{id,params}[]）
+  var leIds   = (s.longEntryIds||s.longEntry||[]).map(function(x){return x.id||x;});
+  var lxIds   = (s.longExitIds||s.longExit||[]).map(function(x){return x.id||x;});
+  var leParams = {};
+  (s.longEntry||[]).forEach(function(x){ if(x.id) leParams[x.id]=x.params||{}; });
+  var lxParams = {};
+  (s.longExit||[]).forEach(function(x){ if(x.id) lxParams[x.id]=x.params||{}; });
+  setChecked('longEntryGroup', leIds, leParams);
+  setChecked('longExitGroup',  lxIds, lxParams);
 }
 
 renderStratList();
