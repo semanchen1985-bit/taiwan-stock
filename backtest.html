@@ -1044,20 +1044,40 @@ var MetricsEngine = (function() {
     // Recovery Factor
     var recoveryFactor = maxDD > 1e-8 ? totalReturn / maxDD : 0;
 
-    // Exposure（持倉時間比例）
-    var entryDates = {}, inPos = false;
-    trades.forEach(function(t){
-      if (t.type === 'entry') { entryDates[t.entryDate||t.date] = true; inPos = true; }
-      if (t.type === 'exit')  { inPos = false; }
+    // Exposure：逐 bar 計算持倉狀態（正確版）
+    // 建立日期→索引映射
+    var dateToIdx = {};
+    if (dates) { dates.forEach(function(d,i){ dateToIdx[d]=i; }); }
+    // 標記每個 bar 是否持倉
+    var inPositionBar = new Uint8Array(n); // 0=空倉, 1=持倉
+    var posOpen = false;
+    trades.forEach(function(t) {
+      if (t.type === 'entry') { posOpen = true; }
+      if (t.type === 'exit')  { posOpen = false; }
     });
-    // 粗略估計：以交易筆數佔總天數比率
-    var exposure = closed.length > 0
-      ? closed.reduce(function(a,t){
-          var ed = new Date(t.entryDate||dates[0]);
-          var xd = new Date(t.exitDate||t.date||dates[0]);
-          return a + Math.max((xd-ed)/86400000, 1);
-        }, 0) / Math.max(n, 1)
-      : 0;
+    // 用 entry/exit 日期重建持倉區間
+    var intervals = [];
+    var lastEntry = -1;
+    trades.forEach(function(t) {
+      var ti = (t.date && dateToIdx[t.date] != null) ? dateToIdx[t.date]
+             : (t.entryDate && dateToIdx[t.entryDate] != null) ? dateToIdx[t.entryDate] : -1;
+      if (t.type === 'entry') { lastEntry = ti; }
+      if (t.type === 'exit' && lastEntry >= 0) {
+        var xi = (t.exitDate && dateToIdx[t.exitDate] != null) ? dateToIdx[t.exitDate]
+               : (t.date && dateToIdx[t.date] != null) ? dateToIdx[t.date] : ti;
+        intervals.push([lastEntry, xi]);
+        lastEntry = -1;
+      }
+    });
+    // 若有未平倉（lastEntry > 0），計入到最後一根 bar
+    if (lastEntry >= 0) intervals.push([lastEntry, n-1]);
+    // 標記持倉 bar
+    intervals.forEach(function(iv) {
+      for (var b = iv[0]; b <= iv[1] && b < n; b++) inPositionBar[b] = 1;
+    });
+    var inPosBars = 0;
+    for (var b = 0; b < n; b++) { if (inPositionBar[b]) inPosBars++; }
+    var exposure = n > 0 ? inPosBars / n : 0;
 
     // ── 年度績效 ──────────────────────────────────────────────
     var annual = {};
@@ -1075,17 +1095,32 @@ var MetricsEngine = (function() {
       });
     }
 
+    // ── 平均持倉天數 / annualized volatility / downside deviation ──
+    var avgHoldingDays = 0, avgBarsPerTrade = 0;
+    if (closed.length > 0) {
+      var totalHoldBars = intervals.reduce(function(a,iv){ return a + (iv[1]-iv[0]+1); }, 0);
+      avgBarsPerTrade   = totalHoldBars / Math.max(closed.length, 1);
+      avgHoldingDays    = avgBarsPerTrade; // 台股每 bar = 1 交易日
+    }
+
+    // 年化波動率（用日 log return 的標準差）
+    var annVolatility = stdRet * Math.sqrt(252);
+
+    // Downside deviation（下行標準差，年化）
+    var downsideDev = downStd;
+
     return {
       // 報酬
       totalReturn, cagr, annReturn: cagr,
       // 風險
       sharpe, sortino, calmar, maxDD, maxDDLen,
-      recoveryFactor, exposure,
+      recoveryFactor, exposure, annVolatility, downsideDev,
       // 交易
       tradeCount: closed.length,
       winRate, avgWin, avgLoss, grossProfit, grossLoss,
       profitFactor, expectancy,
       maxWinStreak: maxWS, maxLoseStreak: maxLS,
+      avgHoldingDays, avgBarsPerTrade,
       // 帳戶
       finalEquity, initCapital,
       // 年度
@@ -2256,20 +2291,40 @@ var MetricsEngine = (function() {
     // Recovery Factor
     var recoveryFactor = maxDD > 1e-8 ? totalReturn / maxDD : 0;
 
-    // Exposure（持倉時間比例）
-    var entryDates = {}, inPos = false;
-    trades.forEach(function(t){
-      if (t.type === 'entry') { entryDates[t.entryDate||t.date] = true; inPos = true; }
-      if (t.type === 'exit')  { inPos = false; }
+    // Exposure：逐 bar 計算持倉狀態（正確版）
+    // 建立日期→索引映射
+    var dateToIdx = {};
+    if (dates) { dates.forEach(function(d,i){ dateToIdx[d]=i; }); }
+    // 標記每個 bar 是否持倉
+    var inPositionBar = new Uint8Array(n); // 0=空倉, 1=持倉
+    var posOpen = false;
+    trades.forEach(function(t) {
+      if (t.type === 'entry') { posOpen = true; }
+      if (t.type === 'exit')  { posOpen = false; }
     });
-    // 粗略估計：以交易筆數佔總天數比率
-    var exposure = closed.length > 0
-      ? closed.reduce(function(a,t){
-          var ed = new Date(t.entryDate||dates[0]);
-          var xd = new Date(t.exitDate||t.date||dates[0]);
-          return a + Math.max((xd-ed)/86400000, 1);
-        }, 0) / Math.max(n, 1)
-      : 0;
+    // 用 entry/exit 日期重建持倉區間
+    var intervals = [];
+    var lastEntry = -1;
+    trades.forEach(function(t) {
+      var ti = (t.date && dateToIdx[t.date] != null) ? dateToIdx[t.date]
+             : (t.entryDate && dateToIdx[t.entryDate] != null) ? dateToIdx[t.entryDate] : -1;
+      if (t.type === 'entry') { lastEntry = ti; }
+      if (t.type === 'exit' && lastEntry >= 0) {
+        var xi = (t.exitDate && dateToIdx[t.exitDate] != null) ? dateToIdx[t.exitDate]
+               : (t.date && dateToIdx[t.date] != null) ? dateToIdx[t.date] : ti;
+        intervals.push([lastEntry, xi]);
+        lastEntry = -1;
+      }
+    });
+    // 若有未平倉（lastEntry > 0），計入到最後一根 bar
+    if (lastEntry >= 0) intervals.push([lastEntry, n-1]);
+    // 標記持倉 bar
+    intervals.forEach(function(iv) {
+      for (var b = iv[0]; b <= iv[1] && b < n; b++) inPositionBar[b] = 1;
+    });
+    var inPosBars = 0;
+    for (var b = 0; b < n; b++) { if (inPositionBar[b]) inPosBars++; }
+    var exposure = n > 0 ? inPosBars / n : 0;
 
     // ── 年度績效 ──────────────────────────────────────────────
     var annual = {};
@@ -2287,17 +2342,32 @@ var MetricsEngine = (function() {
       });
     }
 
+    // ── 平均持倉天數 / annualized volatility / downside deviation ──
+    var avgHoldingDays = 0, avgBarsPerTrade = 0;
+    if (closed.length > 0) {
+      var totalHoldBars = intervals.reduce(function(a,iv){ return a + (iv[1]-iv[0]+1); }, 0);
+      avgBarsPerTrade   = totalHoldBars / Math.max(closed.length, 1);
+      avgHoldingDays    = avgBarsPerTrade; // 台股每 bar = 1 交易日
+    }
+
+    // 年化波動率（用日 log return 的標準差）
+    var annVolatility = stdRet * Math.sqrt(252);
+
+    // Downside deviation（下行標準差，年化）
+    var downsideDev = downStd;
+
     return {
       // 報酬
       totalReturn, cagr, annReturn: cagr,
       // 風險
       sharpe, sortino, calmar, maxDD, maxDDLen,
-      recoveryFactor, exposure,
+      recoveryFactor, exposure, annVolatility, downsideDev,
       // 交易
       tradeCount: closed.length,
       winRate, avgWin, avgLoss, grossProfit, grossLoss,
       profitFactor, expectancy,
       maxWinStreak: maxWS, maxLoseStreak: maxLS,
+      avgHoldingDays, avgBarsPerTrade,
       // 帳戶
       finalEquity, initCapital,
       // 年度
@@ -2719,7 +2789,9 @@ function showResults(result, data) {
     +sc('最大連勝',   m.maxWinStreak+'次','pos')
     +sc('最大連敗',   m.maxLoseStreak+'次','neg')
     +sc('復原因子',   fmtN(m.recoveryFactor), m.recoveryFactor>=1?'pos':'neu')
-    +sc('持倉曝光率', (m.exposure*100).toFixed(0)+'%','neu')
+    +sc('持倉曝光率', (m.exposure*100).toFixed(1)+'%','neu')
+    +sc('年化波動率', m.annVolatility!=null?fmtP(m.annVolatility):'—','neu')
+    +sc('平均持倉天數',m.avgHoldingDays!=null?fmtN(m.avgHoldingDays,1)+'日':'—','neu')
     +sc('回測年數',   fmtN(m.years,1)+'年','neu')
     +'</div>'
     +'<div class="chart-wrap"><div class="chart-title">年度績效</div>'
