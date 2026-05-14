@@ -239,6 +239,32 @@ html{font-size:14px}body{background:var(--bg);color:var(--text1);font-family:"No
 
 "use strict";
 
+// ════════════════════════════════════════════════════════════
+// ENGINE META
+// ════════════════════════════════════════════════════════════
+var BT_ENGINE = {
+  version:    '4.1.0',
+  buildDate:  '2026-05-15',
+  features:   ['long','short','worker','exposure','metrics-v2'],
+  // 預留接口
+  _monteCarlo: null,  // Monte Carlo mode (future)
+  _leverage:   null,  // Leverage mode (future)
+  _multiPos:   null,  // Multi-position mode (future)
+  _replay:     null,  // Bar-by-bar replay mode (future)
+  _benchmark:  null,  // Benchmark vs index (future)
+};
+
+// Debug mode（localStorage 設 bt_debug=1 開啟）
+var BT_DEBUG = (function() {
+  try { return localStorage.getItem('bt_debug') === '1'; } catch(e) { return false; }
+})();
+function dbg() {
+  if (!BT_DEBUG) return;
+  var args = Array.prototype.slice.call(arguments);
+  args.unshift('[BT]');
+  console.log.apply(console, args);
+}
+
 // ──────────────────────────────────────────────────────────────
 // 1. INDICATORS ENGINE
 // ──────────────────────────────────────────────────────────────
@@ -977,9 +1003,32 @@ var ExecutionEngine = (function() {
 
 var MetricsEngine = (function() {
 
+// no-trade edge case：回傳空白 metrics（避免 NaN 擴散）
+function _emptyMetrics(initCapital) {
+  return {
+    totalReturn:0, cagr:0, annReturn:0,
+    sharpe:0, sortino:0, calmar:0,
+    maxDD:0, maxDDLen:0, recoveryFactor:0,
+    exposure:0, annVolatility:0, downsideDev:0,
+    tradeCount:0, winRate:0, avgWin:0, avgLoss:0,
+    grossProfit:0, grossLoss:0, profitFactor:0, expectancy:0,
+    maxWinStreak:0, maxLoseStreak:0,
+    avgHoldingDays:0, avgBarsPerTrade:0,
+    finalEquity:initCapital, initCapital:initCapital,
+    years:0, annual:{},
+  };
+}
+
+
   function compute(equity, trades, initCapital, dates) {
     var n = equity.length;
-    var finalEquity = equity[n - 1] || initCapital;
+    // no-trade / warmup-only edge case
+    if (!n || !trades || !trades.filter(function(t){return t.type==='exit';}).length) {
+      return _emptyMetrics(initCapital || 1000000);
+    }
+    var finalEquity = equity[n - 1];
+    // negative equity / NaN protection（做空極端虧損時）
+    if (!isFinite(finalEquity) || finalEquity <= 0) finalEquity = initCapital * 0.001;
 
     // ── 基本報酬 ──────────────────────────────────────────────
     var totalReturn = (finalEquity - initCapital) / initCapital;
@@ -1008,18 +1057,21 @@ var MetricsEngine = (function() {
     var variance = logRets.reduce(function(a,b){return a+Math.pow(b-meanRet,2);},0) / Math.max(nd-1,1);
     var stdRet = Math.sqrt(variance);
 
-    var sharpe  = stdRet  > 1e-8 ? (meanRet * Math.sqrt(252)) / stdRet : 0;
+    // overflow/Infinity protection
+    if (!isFinite(stdRet) || isNaN(stdRet)) stdRet = 0;
+    var sharpe = stdRet > 1e-8 ? Math.max(Math.min((meanRet * Math.sqrt(252)) / stdRet, 999), -999) : 0;
 
     // Sortino（只用負報酬的下行標準差）
-    var downRets = logRets.filter(function(r){return r < 0;});
+    var downRets = logRets.filter(function(r){return r < 0 && isFinite(r);});
     var downVar  = downRets.length > 1
       ? downRets.reduce(function(a,b){return a+b*b;},0) / (downRets.length - 1)
       : 1e-8;
     var downStd  = Math.sqrt(downVar) * Math.sqrt(252);
-    var sortino  = downStd > 1e-8 ? cagr / downStd : 0;
+    if (!isFinite(downStd) || downStd <= 0) downStd = 1e-8;
+    var sortino  = Math.max(Math.min(cagr / downStd, 999), -999);
 
-    // Calmar Ratio
-    var calmar = maxDD > 1e-8 ? cagr / maxDD : 0;
+    // Calmar Ratio — huge drawdown edge case
+    var calmar = maxDD > 1e-8 ? Math.max(Math.min(cagr / maxDD, 999), -999) : 0;
 
     // ── 交易統計 ──────────────────────────────────────────────
     var closed = trades.filter(function(t){return t.type === 'exit';});
@@ -1137,9 +1189,38 @@ var MetricsEngine = (function() {
 // ──────────────────────────────────────────────────────────────
 
 function runBacktestEngine(data, config) {
-  if (!data || !data.closes || data.closes.length < 60) {
-    throw new Error('資料不足，需至少 60 筆');
+  // ── 輸入驗證（production hardening）────────────────────────
+  if (!data || !data.closes) throw new Error('缺少資料');
+  var n = data.closes.length;
+  if (n < 60) throw new Error('資料不足（'+n+'筆），需至少 60 筆');
+
+  // 修正缺失的 OHLC（holiday gaps / missing open）
+  var closes  = data.closes  instanceof Float64Array ? data.closes  : new Float64Array(data.closes);
+  var opens   = data.opens   instanceof Float64Array ? data.opens   : new Float64Array(data.opens   || data.closes);
+  var highs   = data.highs   instanceof Float64Array ? data.highs   : new Float64Array(data.highs   || data.closes);
+  var lows    = data.lows    instanceof Float64Array ? data.lows    : new Float64Array(data.lows    || data.closes);
+  var volumes = data.volumes instanceof Float64Array ? data.volumes : new Float64Array(data.volumes || new Array(n).fill(0));
+
+  // 修正 NaN/0/Infinity（向前填充）
+  for (var i = 0; i < n; i++) {
+    var prevC = i > 0 ? closes[i-1] : 0;
+    if (!isFinite(closes[i])  || closes[i]  <= 0) closes[i]  = prevC;
+    if (!isFinite(opens[i])   || opens[i]   <= 0) opens[i]   = closes[i];
+    if (!isFinite(highs[i])   || highs[i]   <= 0) highs[i]   = closes[i];
+    if (!isFinite(lows[i])    || lows[i]    <= 0) lows[i]    = closes[i];
+    if (!isFinite(volumes[i]) || volumes[i] <  0) volumes[i] = 0;
+    // high >= close >= low 修正
+    if (highs[i] < closes[i]) highs[i] = closes[i];
+    if (lows[i]  > closes[i]) lows[i]  = closes[i];
   }
+
+  // 修正後的 data 物件
+  data = {
+    code: data.code || '', dates: data.dates || [],
+    closes: closes, opens: opens, highs: highs, lows: lows, volumes: volumes,
+  };
+
+  dbg('runBacktestEngine', n, 'bars, config:', config);
   var result = ExecutionEngine.run(data, config);
   var metrics = MetricsEngine.compute(
     result.equity, result.trades, config.capital || 1000000, data.dates
@@ -1177,6 +1258,9 @@ self.onmessage = function(e) {
         var config = msg.config;
         var target = msg.target || 'cagr';
         var params = msg.params || generateParamGrid();
+        // optimize over 200 loops protection
+        var maxIter = Math.min(msg.maxIter || 200, 200);
+        if (params.length > maxIter) params = params.slice(0, maxIter);
         var total  = params.length;
         var results = [];
 
@@ -1313,7 +1397,20 @@ var BacktestStorage = (function() {
         dates:   compressed.dt,
       };
       var raw = JSON.stringify(snapshot);
-      localStorage.setItem(PREFIX + 'last', raw);
+      // localStorage quota protection
+      try {
+        localStorage.setItem(PREFIX + 'last', raw);
+      } catch(quotaErr) {
+        // Quota exceeded: clear old data and retry once
+        try {
+          localStorage.removeItem(PREFIX + 'last');
+          localStorage.removeItem(PREFIX + 'opt');
+          localStorage.removeItem(PREFIX + 'batch');
+          localStorage.setItem(PREFIX + 'last', raw);
+        } catch(e2) {
+          console.warn('[Storage] localStorage full, cannot save result');
+        }
+      }
 
       // 快照歷史
       var hist = loadHistory();
@@ -1450,10 +1547,14 @@ var BacktestStorage = (function() {
   function exportEquityCSV(result, dates) {
     var rows = ['\uFEFF日期,淨值,報酬率%'];
     var eq   = result.equity;
-    var init = eq[0] || result.metrics.initCapital;
-    eq.forEach(function(v, i) {
-      rows.push([(dates&&dates[i])||i, Math.round(v), ((v-init)/init*100).toFixed(2)].join(','));
-    });
+    var init = eq[0] || result.metrics.initCapital || 1;
+    // large file protection：超過 5000 筆每 2 筆取 1
+    var step = eq.length > 5000 ? 2 : 1;
+    for (var i = 0; i < eq.length; i += step) {
+      var v = eq[i];
+      if (!isFinite(v)) v = init;
+      rows.push([(dates&&dates[i])||i, Math.round(v), ((v-init)/Math.max(init,1)*100).toFixed(2)].join(','));
+    }
     return rows.join('\r\n');
   }
 
@@ -1485,6 +1586,32 @@ var BacktestStorage = (function() {
 // ═══════════════════════════════════════════════════════════════
 
 "use strict";
+
+// ════════════════════════════════════════════════════════════
+// ENGINE META
+// ════════════════════════════════════════════════════════════
+var BT_ENGINE = {
+  version:    '4.1.0',
+  buildDate:  '2026-05-15',
+  features:   ['long','short','worker','exposure','metrics-v2'],
+  // 預留接口
+  _monteCarlo: null,  // Monte Carlo mode (future)
+  _leverage:   null,  // Leverage mode (future)
+  _multiPos:   null,  // Multi-position mode (future)
+  _replay:     null,  // Bar-by-bar replay mode (future)
+  _benchmark:  null,  // Benchmark vs index (future)
+};
+
+// Debug mode（localStorage 設 bt_debug=1 開啟）
+var BT_DEBUG = (function() {
+  try { return localStorage.getItem('bt_debug') === '1'; } catch(e) { return false; }
+})();
+function dbg() {
+  if (!BT_DEBUG) return;
+  var args = Array.prototype.slice.call(arguments);
+  args.unshift('[BT]');
+  console.log.apply(console, args);
+}
 
 // ──────────────────────────────────────────────────────────────
 // 1. INDICATORS ENGINE
@@ -2226,7 +2353,13 @@ var MetricsEngine = (function() {
 
   function compute(equity, trades, initCapital, dates) {
     var n = equity.length;
-    var finalEquity = equity[n - 1] || initCapital;
+    // no-trade / warmup-only edge case
+    if (!n || !trades || !trades.filter(function(t){return t.type==='exit';}).length) {
+      return _emptyMetrics(initCapital || 1000000);
+    }
+    var finalEquity = equity[n - 1];
+    // negative equity / NaN protection（做空極端虧損時）
+    if (!isFinite(finalEquity) || finalEquity <= 0) finalEquity = initCapital * 0.001;
 
     // ── 基本報酬 ──────────────────────────────────────────────
     var totalReturn = (finalEquity - initCapital) / initCapital;
@@ -2255,18 +2388,21 @@ var MetricsEngine = (function() {
     var variance = logRets.reduce(function(a,b){return a+Math.pow(b-meanRet,2);},0) / Math.max(nd-1,1);
     var stdRet = Math.sqrt(variance);
 
-    var sharpe  = stdRet  > 1e-8 ? (meanRet * Math.sqrt(252)) / stdRet : 0;
+    // overflow/Infinity protection
+    if (!isFinite(stdRet) || isNaN(stdRet)) stdRet = 0;
+    var sharpe = stdRet > 1e-8 ? Math.max(Math.min((meanRet * Math.sqrt(252)) / stdRet, 999), -999) : 0;
 
     // Sortino（只用負報酬的下行標準差）
-    var downRets = logRets.filter(function(r){return r < 0;});
+    var downRets = logRets.filter(function(r){return r < 0 && isFinite(r);});
     var downVar  = downRets.length > 1
       ? downRets.reduce(function(a,b){return a+b*b;},0) / (downRets.length - 1)
       : 1e-8;
     var downStd  = Math.sqrt(downVar) * Math.sqrt(252);
-    var sortino  = downStd > 1e-8 ? cagr / downStd : 0;
+    if (!isFinite(downStd) || downStd <= 0) downStd = 1e-8;
+    var sortino  = Math.max(Math.min(cagr / downStd, 999), -999);
 
-    // Calmar Ratio
-    var calmar = maxDD > 1e-8 ? cagr / maxDD : 0;
+    // Calmar Ratio — huge drawdown edge case
+    var calmar = maxDD > 1e-8 ? Math.max(Math.min(cagr / maxDD, 999), -999) : 0;
 
     // ── 交易統計 ──────────────────────────────────────────────
     var closed = trades.filter(function(t){return t.type === 'exit';});
@@ -2384,9 +2520,38 @@ var MetricsEngine = (function() {
 // ──────────────────────────────────────────────────────────────
 
 function runBacktestEngine(data, config) {
-  if (!data || !data.closes || data.closes.length < 60) {
-    throw new Error('資料不足，需至少 60 筆');
+  // ── 輸入驗證（production hardening）────────────────────────
+  if (!data || !data.closes) throw new Error('缺少資料');
+  var n = data.closes.length;
+  if (n < 60) throw new Error('資料不足（'+n+'筆），需至少 60 筆');
+
+  // 修正缺失的 OHLC（holiday gaps / missing open）
+  var closes  = data.closes  instanceof Float64Array ? data.closes  : new Float64Array(data.closes);
+  var opens   = data.opens   instanceof Float64Array ? data.opens   : new Float64Array(data.opens   || data.closes);
+  var highs   = data.highs   instanceof Float64Array ? data.highs   : new Float64Array(data.highs   || data.closes);
+  var lows    = data.lows    instanceof Float64Array ? data.lows    : new Float64Array(data.lows    || data.closes);
+  var volumes = data.volumes instanceof Float64Array ? data.volumes : new Float64Array(data.volumes || new Array(n).fill(0));
+
+  // 修正 NaN/0/Infinity（向前填充）
+  for (var i = 0; i < n; i++) {
+    var prevC = i > 0 ? closes[i-1] : 0;
+    if (!isFinite(closes[i])  || closes[i]  <= 0) closes[i]  = prevC;
+    if (!isFinite(opens[i])   || opens[i]   <= 0) opens[i]   = closes[i];
+    if (!isFinite(highs[i])   || highs[i]   <= 0) highs[i]   = closes[i];
+    if (!isFinite(lows[i])    || lows[i]    <= 0) lows[i]    = closes[i];
+    if (!isFinite(volumes[i]) || volumes[i] <  0) volumes[i] = 0;
+    // high >= close >= low 修正
+    if (highs[i] < closes[i]) highs[i] = closes[i];
+    if (lows[i]  > closes[i]) lows[i]  = closes[i];
   }
+
+  // 修正後的 data 物件
+  data = {
+    code: data.code || '', dates: data.dates || [],
+    closes: closes, opens: opens, highs: highs, lows: lows, volumes: volumes,
+  };
+
+  dbg('runBacktestEngine', n, 'bars, config:', config);
   var result = ExecutionEngine.run(data, config);
   var metrics = MetricsEngine.compute(
     result.equity, result.trades, config.capital || 1000000, data.dates
@@ -2418,17 +2583,29 @@ var _worker = null;
 var _workerCallbacks = {};
 var _msgId = 0;
 
+var _workerBlobUrl = null;
+
 function getWorker() {
   if (_worker) return _worker;
-  var workerSrc = document.getElementById('workerSrc').textContent;
-  var blob = new Blob([workerSrc], { type: 'application/javascript' });
-  var url  = URL.createObjectURL(blob);
-  _worker  = new Worker(url);
+  try {
+    var workerSrc = document.getElementById('workerSrc').textContent;
+    var blob = new Blob([workerSrc], { type: 'application/javascript' });
+    // Blob URL memory leak fix: revoke after Worker loads
+    _workerBlobUrl = URL.createObjectURL(blob);
+    _worker = new Worker(_workerBlobUrl);
+    // Revoke blob URL after worker is created (worker keeps its own reference)
+    URL.revokeObjectURL(_workerBlobUrl);
+    _workerBlobUrl = null;
+  } catch(e) {
+    console.error('[Worker] Failed to create worker:', e.message);
+    throw new Error('Web Worker 建立失敗：' + e.message);
+  }
   _worker.onmessage = function(e) {
     var msg = e.data;
     var cb  = _workerCallbacks[msg.id];
     if (cb) {
       cb(msg);
+      // Clean up callback after done/error (memory leak fix)
       if (msg.type.endsWith('_done') || msg.type === 'error') {
         delete _workerCallbacks[msg.id];
       }
@@ -2436,11 +2613,28 @@ function getWorker() {
   };
   _worker.onerror = function(e) {
     console.error('[Worker]', e.message);
-    Object.values(_workerCallbacks).forEach(function(cb) {
-      cb({ type: 'error', message: e.message });
-    });
+    // Race condition fix: copy callbacks before iterating
+    var cbs = Object.values(_workerCallbacks);
+    _workerCallbacks = {};
+    cbs.forEach(function(cb) { cb({ type: 'error', message: e.message || 'Worker error' }); });
   };
   return _worker;
+}
+
+// Worker terminate（頁面卸載時釋放）
+window.addEventListener('beforeunload', function() {
+  if (_worker) { _worker.terminate(); _worker = null; }
+  _workerCallbacks = {};
+});
+
+// Optimize cancel（BUG FIX: Worker 無法中途取消，只能 terminate 重建）
+function cancelWorker() {
+  if (_worker) {
+    _worker.terminate();
+    _worker = null;
+    _workerCallbacks = {};
+    dbg('Worker terminated and reset');
+  }
 }
 
 function workerPost(type, payload, onProgress, onDone) {
@@ -2752,7 +2946,8 @@ function showResults(result, data) {
     +'<button class="btn-sm" onclick="doExportJSON()">JSON</button>'
     +'<button class="btn-sm" onclick="doExportTrades()">CSV 交易</button>'
     +'<button class="btn-sm" onclick="doExportEquity()">CSV 淨值</button>'
-    +'<span class="worker-badge">Web Worker ✓ &nbsp; v4.0</span>'
+    +'<button class="btn-sm" onclick="alert(\'Benchmark/Replay/Monte Carlo 開發中\')" style="color:var(--text3)">更多...</button>'
+    +'<span class="worker-badge" onclick="toggleDebug()" title="點擊切換 debug 模式">'+(BT_DEBUG?'DEBUG ON':'Web Worker ✓')+'&nbsp;v'+(BT_ENGINE?BT_ENGINE.version:'4.1')+'</span>'
     +'</div>'
     +'<div class="signal-box"><div class="signal-title">今日操作建議 — '+(cfg.code||'')+'（'+data.dates[lastI]+'）</div>'
     +'<div style="display:flex;align-items:center;gap:10px"><span class="signal-badge '+sigCls+'">'+sigTxt+'</span>'
@@ -2925,7 +3120,7 @@ function runOptimize() {
   var td={ code:data.code, dates:data.dates, opens:Array.from(data.opens), highs:Array.from(data.highs), lows:Array.from(data.lows), closes:Array.from(data.closes), volumes:Array.from(data.volumes) };
 
   optMsgId = workerPost('optimize',
-    { data:td, config:window._lastConfig, target:document.getElementById('optTarget').value },
+    { data:td, config:window._lastConfig, target:document.getElementById('optTarget').value, maxIter:Math.min(parseInt(document.getElementById('optIter').value)||60, 200) },
     function(pct){ document.getElementById('optProgress').style.width=pct+'%'; document.getElementById('optStatus').textContent='測試中 '+pct+'%...'; },
     function(results, err) {
       optRunning=false; btn.disabled=false; btn.textContent='開始參數優化';
@@ -2987,7 +3182,11 @@ function runBatchOpt() {
     }
   );
 }
-function stopBatch(){ batchRunning=false; document.getElementById('batchStatus').textContent='已停止'; }
+function stopBatch() {
+  batchRunning = false;
+  cancelWorker(); // terminate worker，避免 batch 繼續跑
+  document.getElementById('batchStatus').textContent = '已停止（Worker 已終止）';
+}
 
 function renderBatchResults(results) {
   if (!results||!results.length) return;
@@ -3014,6 +3213,21 @@ function dlFile(content,filename,mime) {
   var a=document.createElement('a'); a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
+// Console debug mode toggle
+function toggleDebug() {
+  try {
+    var cur = localStorage.getItem('bt_debug') === '1';
+    localStorage.setItem('bt_debug', cur ? '0' : '1');
+    // 更新全域 flag
+    window.BT_DEBUG = !cur;
+    console.log('[BT] Debug mode:', !cur ? 'ON' : 'OFF');
+    // 重新渲染 badge（如果有結果）
+    if (window._lastResult && window._lastData) {
+      showResults(window._lastResult, window._lastData);
+    }
+  } catch(e) {}
+}
+
 function doExportJSON() {
   if (!window._lastResult) return alert('請先執行回測');
   dlFile(BacktestStorage.exportFullJSON(window._lastResult,window._lastData,window._lastConfig),
