@@ -131,7 +131,25 @@ html{font-size:14px}body{background:var(--bg);color:var(--text1);font-family:"No
 </style>
 </head>
 <body>
-
+<script>
+// Early diagnostic - runs before SES can interfere
+try {
+  var _diag = document.createElement('div');
+  _diag.id = 'bt-diag';
+  _diag.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f00;color:#fff;font-size:11px;padding:4px;z-index:9999;font-family:monospace;display:none';
+  document.body.appendChild(_diag);
+  window._btDiag = function(msg) {
+    _diag.textContent = msg;
+    _diag.style.display = 'block';
+    console.log('[DIAG]', msg);
+  };
+  window._btDiag('HTML body loaded OK');
+  window.onerror = function(msg, src, line, col, err) {
+    window._btDiag('JS ERROR: ' + msg + ' (line ' + line + ')');
+    return false;
+  };
+} catch(e) {}
+</script>
 <header class="hdr">
   <div class="hdr-inner">
     <div class="logo">台股<span>.</span>AI <span style="color:var(--text3);font-weight:400">回測系統</span> <span style="font-size:10px;color:var(--green)">v4.0</span></div>
@@ -1595,7 +1613,6 @@ function generateParamGrid() {
 <!-- Storage -->
 <script>
 // bt/storage.js — BacktestStorageManager v4.0
-"use strict";
 
 var BacktestStorage = (function() {
 
@@ -1827,7 +1844,6 @@ var BacktestStorage = (function() {
 //   4. Position object 完整，可擴充槓桿/分批
 // ═══════════════════════════════════════════════════════════════
 
-"use strict";
 console.log('[BT-CORE] Script 2 start');
 
 
@@ -2984,7 +3000,6 @@ if (typeof module !== 'undefined') module.exports = { runBacktestEngine, Indicat
 // ═══════════════════════════════════════════════════════════════
 // backtest UI layer — v4.0
 // ═══════════════════════════════════════════════════════════════
-"use strict";
 
 var RENDER_URL = "https://taiwan-stock-api-lm71.onrender.com";
 
