@@ -28,7 +28,6 @@ html{font-size:14px}body{background:var(--bg);color:var(--text1);font-family:"No
 .field-input{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text1);font-family:"IBM Plex Mono",monospace;font-size:12px;padding:6px 10px;border-radius:5px;outline:none;transition:border-color .2s}.field-input:focus{border-color:var(--accent)}.field-input::placeholder{color:var(--text3)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .field-select{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text1);font-family:"IBM Plex Mono",monospace;font-size:12px;padding:6px 10px;border-radius:5px;outline:none;cursor:pointer}.field-select option{background:var(--bg2)}
-.check-group{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px}
 .check-item{display:flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid var(--border);border-radius:4px;cursor:pointer;transition:all .15s;font-size:11px;color:var(--text2)}.check-item:hover{border-color:var(--border2);color:var(--text1)}.check-item.on{border-color:var(--accent);color:var(--accent);background:rgba(59,130,246,.07)}.check-item input{display:none}
 .section-hd{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;padding:8px 0 5px;border-top:1px solid var(--border);margin-top:8px}.section-hd:first-child{border-top:none;padding-top:0;margin-top:0}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
@@ -57,37 +56,77 @@ html{font-size:14px}body{background:var(--bg);color:var(--text1);font-family:"No
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}.fade-up{animation:fadeUp .2s ease both}
 .pos{color:var(--green)}.neg{color:var(--red)}.neu{color:var(--text1)}
 
-/* 策略參數列 */
-.strat-param-wrap{display:contents}
-.check-group .strat-param-wrap{display:block}
+/* ── 策略參數列 ───────────────────────────────────────── */
+
+/* check-group 改用 flex wrap，每格佔一半 */
+.check-group{
+  display:flex;
+  flex-wrap:wrap;
+  gap:3px;
+  margin-top:4px;
+}
+
+/* wrapper 預設佔一格（約 50%）*/
+.strat-param-wrap{
+  width:calc(50% - 2px);
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+
+/* 有展開參數時佔整行 */
+.strat-param-wrap.has-params-open{
+  width:100%;
+}
+
+/* check-item 填滿 wrapper */
+.check-group .check-item{
+  width:100%;
+  box-sizing:border-box;
+}
+
+/* 參數列 */
 .param-row{
-  grid-column:1/-1;
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+  display:none;       /* JS 控制顯示 */
+  flex-direction:column;
   gap:4px;
-  padding:5px 6px 7px;
+  padding:6px 8px 8px;
   background:var(--bg4);
   border:1px solid var(--border2);
   border-top:none;
-  border-radius:0 0 4px 4px;
-  margin-bottom:3px;
+  border-radius:0 0 5px 5px;
+  margin-bottom:1px;
+}
+.param-row.open{
+  display:flex;
+}
+/* 參數欄位橫排 */
+.param-row-inner{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(100px,1fr));
+  gap:6px;
 }
 .param-cell{display:flex;flex-direction:column;gap:2px}
-.param-label{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--text3);letter-spacing:.03em}
+.param-label{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:9px;
+  color:var(--text3);
+  letter-spacing:.03em;
+}
 .param-input{
   background:var(--bg2);
   border:1px solid var(--border2);
   color:var(--text1);
   font-family:"IBM Plex Mono",monospace;
   font-size:11px;
-  padding:3px 6px;
-  border-radius:3px;
+  padding:4px 7px;
+  border-radius:4px;
   outline:none;
   width:100%;
+  transition:border-color .15s;
 }
 .param-input:focus{border-color:var(--accent)}
-/* 讓 check-group 的 item 本身佔整列 */
-.check-group .check-item{grid-column:span 1}
+.param-input:hover{border-color:var(--border2)}
 
 </style>
 </head>
@@ -3229,21 +3268,29 @@ function buildCheckGroup(id, items) {
     cb.addEventListener('change', function() {
       lbl.classList.toggle('on', this.checked);
       var pRow = wrapper.querySelector('.param-row');
-      if (pRow) pRow.style.display = this.checked ? 'grid' : 'none';
+      if (pRow) {
+        pRow.classList.toggle('open', this.checked);
+        wrapper.classList.toggle('has-params-open', this.checked);
+      }
     });
     wrapper.appendChild(lbl);
 
     // 參數列（預設隱藏，勾選後顯示）
     if (item.params && item.params.length) {
       var pRow = document.createElement('div');
-      pRow.className = 'param-row';
-      pRow.style.display = 'none';
+      pRow.className = 'param-row'; // open class 由 JS 控制
+
+      // 橫排 inner wrapper
+      var inner = document.createElement('div');
+      inner.className = 'param-row-inner';
+
       item.params.forEach(function(p) {
         var cell = document.createElement('div');
         cell.className = 'param-cell';
+        var curVal = stratParams[id][item.id][p.key];
         cell.innerHTML = '<span class="param-label">' + p.label + '</span>'
           + '<input class="param-input" type="number"'
-          + ' value="' + stratParams[id][item.id][p.key] + '"'
+          + ' value="' + curVal + '"'
           + ' min="' + p.min + '" max="' + p.max + '" step="' + p.step + '"'
           + ' data-group="' + id + '" data-strat="' + item.id + '" data-key="' + p.key + '">';
         cell.querySelector('input').addEventListener('change', function() {
@@ -3253,8 +3300,9 @@ function buildCheckGroup(id, items) {
           this.value = v;
           stratParams[this.dataset.group][this.dataset.strat][this.dataset.key] = v;
         });
-        pRow.appendChild(cell);
+        inner.appendChild(cell);
       });
+      pRow.appendChild(inner);
       wrapper.appendChild(pRow);
     }
 
@@ -3286,8 +3334,10 @@ function setChecked(gid, ids, paramMap) {
     var on = (ids||[]).indexOf(cb.value) >= 0;
     cb.checked = on;
     cb.closest('.check-item').classList.toggle('on', on);
-    var pRow = cb.closest('.strat-param-wrap') && cb.closest('.strat-param-wrap').querySelector('.param-row');
-    if (pRow) pRow.style.display = on ? 'grid' : 'none';
+    var wrap = cb.closest('.strat-param-wrap');
+    var pRow = wrap && wrap.querySelector('.param-row');
+    if (pRow) { pRow.classList.toggle('open', on); }
+    if (wrap) { wrap.classList.toggle('has-params-open', on && !!pRow); }
   });
   // 若有傳入 paramMap，更新參數值
   if (paramMap && stratParams[gid]) {
@@ -3317,16 +3367,18 @@ function selectAll(g) {
   document.querySelectorAll('#'+g+' input[type=checkbox]').forEach(function(cb) {
     cb.checked = true;
     cb.closest('.check-item').classList.add('on');
-    var pRow = cb.closest('.strat-param-wrap') && cb.closest('.strat-param-wrap').querySelector('.param-row');
-    if (pRow) pRow.style.display = 'grid';
+    var wrap = cb.closest('.strat-param-wrap');
+    var pRow = wrap && wrap.querySelector('.param-row');
+    if (pRow) { pRow.classList.add('open'); wrap.classList.add('has-params-open'); }
   });
 }
 function clearAll(g) {
   document.querySelectorAll('#'+g+' input[type=checkbox]').forEach(function(cb) {
     cb.checked = false;
     cb.closest('.check-item').classList.remove('on');
-    var pRow = cb.closest('.strat-param-wrap') && cb.closest('.strat-param-wrap').querySelector('.param-row');
-    if (pRow) pRow.style.display = 'none';
+    var wrap = cb.closest('.strat-param-wrap');
+    var pRow = wrap && wrap.querySelector('.param-row');
+    if (pRow) { pRow.classList.remove('open'); wrap.classList.remove('has-params-open'); }
   });
 }
 
