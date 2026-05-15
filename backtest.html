@@ -3249,6 +3249,9 @@ function buildCheckGroup(id, items) {
   if (!c) return;
   c.innerHTML = '';
   if (!stratParams[id]) stratParams[id] = {};
+  // DEBUG: confirm params loaded
+  var totalParams = items.reduce(function(n,i){return n+(i.params?i.params.length:0);},0);
+  console.log('[BT] buildCheckGroup', id, 'items:', items.length, 'total params:', totalParams);
   items.forEach(function(item) {
     // 初始化預設值
     if (!stratParams[id][item.id]) {
