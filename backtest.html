@@ -1497,9 +1497,14 @@ self.onmessage = function(e) {
           try {
             var r = runBacktestEngine(data, c);
             var score = getScore(r.metrics, target);
+            // entry[0] 可能是 {id,params} 或 string，統一取 id
+            var entryObj = combos[i].entry[0];
+            var exitObj  = combos[i].exit[0];
             results.push({
-              entry:   combos[i].entry[0],
-              exit:    combos[i].exit[0],
+              entry:       (entryObj && entryObj.id) ? entryObj.id : entryObj,
+              entryParams: (entryObj && entryObj.params) ? entryObj.params : {},
+              exit:        (exitObj  && exitObj.id)  ? exitObj.id  : exitObj,
+              exitParams:  (exitObj  && exitObj.params)  ? exitObj.params  : {},
               metrics: r.metrics,
               score:   score,
             });
@@ -3732,13 +3737,21 @@ function renderOptResults(results) {
 var batchRunning=false;
 function runBatchOpt() {
   if (batchRunning||!window._lastData) { if(!window._lastData) alert('請先執行回測'); return; }
-  var entries=getSelected('batchEntryGroup'), exits=getSelected('batchExitGroup');
-  if (!entries.length||!exits.length) { alert('請選擇策略'); return; }
+  // 取得含參數的策略設定
+  var entries=getSelectedWithParams('batchEntryGroup'), exits=getSelectedWithParams('batchExitGroup');
+  var entryIds=getSelected('batchEntryGroup'), exitIds=getSelected('batchExitGroup');
+  if (!entryIds.length||!exitIds.length) { alert('請選擇策略'); return; }
   batchRunning=true;
   var btn=document.getElementById('batchBtn'); btn.disabled=true; btn.textContent='優化中...';
   document.getElementById('batchProgress').style.width='0%';
 
-  var combos=[]; entries.forEach(function(e){exits.forEach(function(x){combos.push({entry:[e],exit:[x]});});});
+  // combos：entry/exit 各帶完整 params（{id, params}[]）
+  var combos=[];
+  entries.forEach(function(e){
+    exits.forEach(function(x){
+      combos.push({entry:[e], exit:[x]});
+    });
+  });
   var maxCombos=Math.min(combos.length, +document.getElementById('batchIter').value||50);
   combos=combos.slice(0,maxCombos);
 
@@ -3769,9 +3782,16 @@ function renderBatchResults(results) {
     +'<th>排名</th><th>買入策略</th><th>賣出策略</th><th>年化報酬</th><th>夏普</th><th>索提諾</th><th>最大回撤</th><th>勝率</th><th>交易數</th>'
     +'</tr></thead><tbody>'
     +results.slice(0,30).map(function(r,i){
+        var eLabel = ALL_STRATS_MAP[r.entry] || r.entry || '—';
+        var xLabel = ALL_STRATS_MAP[r.exit]  || r.exit  || '—';
+        // 附上關鍵參數摘要（若有）
+        function paramSummary(params) {
+          if (!params) return '';
+          return ' <span style="color:var(--text3);font-size:9px">['+Object.values(params).join('/')+'</span>]';
+        }
         return '<tr><td>'+(i+1)+'</td>'
-          +'<td style="font-size:10px">'+(ALL_STRATS_MAP[r.entry]||r.entry)+'</td>'
-          +'<td style="font-size:10px">'+(ALL_STRATS_MAP[r.exit]||r.exit)+'</td>'
+          +'<td style="font-size:10px">'+eLabel+paramSummary(r.entryParams)+'</td>'
+          +'<td style="font-size:10px">'+xLabel+paramSummary(r.exitParams)+'</td>'
           +'<td style="color:var(--'+(r.metrics.cagr>=0?'green':'red')+')">'  +fmtP(r.metrics.cagr)+'</td>'
           +'<td>'+fmtN(r.metrics.sharpe)+'</td><td>'+fmtN(r.metrics.sortino)+'</td>'
           +'<td style="color:var(--red)">'+fmtP(-r.metrics.maxDD)+'</td>'
@@ -3834,9 +3854,15 @@ function saveStrategy() {
     stopLoss:document.getElementById('stopLoss').value,
     stopProfit:document.getElementById('stopProfit').value,
     scoreThreshold:document.getElementById('scoreThreshold').value,
-    longEntry:getSelectedWithParams('longEntryGroup'), longExit:getSelectedWithParams('longExitGroup'),
-    longEntryIds:getSelected('longEntryGroup'), longExitIds:getSelected('longExitGroup'),
-    shortEnabled,
+    longEntry:    getSelectedWithParams('longEntryGroup'),
+    longExit:     getSelectedWithParams('longExitGroup'),
+    longEntryIds: getSelected('longEntryGroup'),
+    longExitIds:  getSelected('longExitGroup'),
+    shortEnabled: shortEnabled,
+    shortEntry:    getSelectedWithParams('shortEntryGroup'),
+    shortExit:     getSelectedWithParams('shortExitGroup'),
+    shortEntryIds: getSelected('shortEntryGroup'),
+    shortExitIds:  getSelected('shortExitGroup'),
     cagr:   m?fmtP(m.cagr):'—', sharpe:m?fmtN(m.sharpe):'—',
     savedAt:new Date().toLocaleDateString('zh-TW'),
   });
@@ -3867,14 +3893,36 @@ function loadStrategy(s) {
    ['scoreThreshold',s.scoreThreshold||1]
   ].forEach(function(pair){ var el=document.getElementById(pair[0]); if(el&&pair[1]!=null)el.value=pair[1]; });
   // 支援舊版（string[]）和新版（{id,params}[]）
-  var leIds   = (s.longEntryIds||s.longEntry||[]).map(function(x){return x.id||x;});
-  var lxIds   = (s.longExitIds||s.longExit||[]).map(function(x){return x.id||x;});
-  var leParams = {};
-  (s.longEntry||[]).forEach(function(x){ if(x.id) leParams[x.id]=x.params||{}; });
-  var lxParams = {};
-  (s.longExit||[]).forEach(function(x){ if(x.id) lxParams[x.id]=x.params||{}; });
+  function toIds(arr) { return (arr||[]).map(function(x){return x.id||x;}); }
+  function toParamMap(arr) {
+    var m={};
+    (arr||[]).forEach(function(x){ if(x.id&&x.params) m[x.id]=Object.assign({},x.params); });
+    return m;
+  }
+
+  var leIds    = toIds(s.longEntryIds||s.longEntry);
+  var lxIds    = toIds(s.longExitIds||s.longExit);
+  var leParams = toParamMap(s.longEntry||[]);
+  var lxParams = toParamMap(s.longExit||[]);
   setChecked('longEntryGroup', leIds, leParams);
   setChecked('longExitGroup',  lxIds, lxParams);
+
+  // 還原做空策略
+  if (s.shortEnabled) {
+    shortEnabled = true;
+    document.getElementById('shortToggle').classList.add('on');
+    document.getElementById('shortBody').style.display = 'block';
+  } else {
+    shortEnabled = false;
+    document.getElementById('shortToggle').classList.remove('on');
+    document.getElementById('shortBody').style.display = 'none';
+  }
+  var seIds    = toIds(s.shortEntryIds||s.shortEntry);
+  var sxIds    = toIds(s.shortExitIds||s.shortExit);
+  var seParams = toParamMap(s.shortEntry||[]);
+  var sxParams = toParamMap(s.shortExit||[]);
+  setChecked('shortEntryGroup', seIds, seParams);
+  setChecked('shortExitGroup',  sxIds, sxParams);
 }
 
 renderStratList();
