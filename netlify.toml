@@ -1,14 +1,6 @@
-[build]
-  functions = "netlify/functions"
-
-[functions]
-  node_bundler = "esbuild"
-
-[functions."analyze"]
-  timeout = 120
-
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
+    # 移除 SES / lockdown，讓 JS 正常執行
