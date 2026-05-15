@@ -344,7 +344,7 @@ var Indicators = (function() {
 
   function sma(arr, p) {
     var n = arr.length;
-    var r = new Float64Array(n);
+    var r = new Array(n).fill(NaN);
     r.fill(NaN);
     if (p > n) return r;
     var s = 0;
@@ -359,7 +359,7 @@ var Indicators = (function() {
 
   function ema(arr, p) {
     var n = arr.length;
-    var r = new Float64Array(n);
+    var r = new Array(n).fill(NaN);
     r.fill(NaN);
     var k = 2 / (p + 1);
     var cnt = 0, sum = 0;
@@ -381,7 +381,7 @@ var Indicators = (function() {
   function rsi(closes, p) {
     p = p || 14;
     var n = closes.length;
-    var r = new Float64Array(n);
+    var r = new Array(n).fill(NaN);
     r.fill(NaN);
     if (n < p + 2) return r;
     var ag = 0, al = 0;
@@ -406,8 +406,8 @@ var Indicators = (function() {
   function kd(highs, lows, closes, p) {
     p = p || 9;
     var n = closes.length;
-    var K = new Float64Array(n); K.fill(NaN);
-    var D = new Float64Array(n); D.fill(NaN);
+    var K = new Array(n).fill(NaN); K.fill(NaN);
+    var D = new Array(n).fill(NaN); D.fill(NaN);
     var pk = 50, pd = 50;
     for (var i = p - 1; i < n; i++) {
       var hi = -Infinity, lo = Infinity;
@@ -429,12 +429,12 @@ var Indicators = (function() {
     var ef = ema(closes, fast);
     var es = ema(closes, slow);
     var n  = closes.length;
-    var M  = new Float64Array(n); M.fill(NaN);
+    var M  = new Array(n).fill(NaN); M.fill(NaN);
     for (var i = 0; i < n; i++) {
       if (!isNaN(ef[i]) && !isNaN(es[i])) M[i] = ef[i] - es[i];
     }
     // EMA of MACD (using only non-NaN values)
-    var S = new Float64Array(n); S.fill(NaN);
+    var S = new Array(n).fill(NaN); S.fill(NaN);
     var k2 = 2 / (signal + 1), cnt = 0, sum = 0;
     for (var i = 0; i < n; i++) {
       if (isNaN(M[i])) continue;
@@ -445,7 +445,7 @@ var Indicators = (function() {
       for (var j = i - 1; j >= 0; j--) { if (!isNaN(S[j])) { prev = S[j]; break; } }
       S[i] = isNaN(prev) ? M[i] : M[i] * k2 + prev * (1 - k2);
     }
-    var H = new Float64Array(n); H.fill(NaN);
+    var H = new Array(n).fill(NaN); H.fill(NaN);
     for (var i = 0; i < n; i++) {
       if (!isNaN(M[i]) && !isNaN(S[i])) H[i] = M[i] - S[i];
     }
@@ -457,8 +457,8 @@ var Indicators = (function() {
     p = p || 20; mult = mult || 2;
     var n   = closes.length;
     var mid = sma(closes, p);
-    var upper = new Float64Array(n); upper.fill(NaN);
-    var lower = new Float64Array(n); lower.fill(NaN);
+    var upper = new Array(n).fill(NaN); upper.fill(NaN);
+    var lower = new Array(n).fill(NaN); lower.fill(NaN);
     for (var i = p - 1; i < n; i++) {
       var m = mid[i], s = 0;
       for (var j = i - p + 1; j <= i; j++) s += (closes[j] - m) * (closes[j] - m);
@@ -473,7 +473,7 @@ var Indicators = (function() {
   function wr(highs, lows, closes, p) {
     p = p || 14;
     var n = closes.length;
-    var r = new Float64Array(n); r.fill(NaN);
+    var r = new Array(n).fill(NaN); r.fill(NaN);
     for (var i = p - 1; i < n; i++) {
       var hi = -Infinity, lo = Infinity;
       for (var j = i - p + 1; j <= i; j++) {
@@ -489,8 +489,8 @@ var Indicators = (function() {
   function donchian(highs, lows, p) {
     p = p || 20;
     var n = highs.length;
-    var upper = new Float64Array(n); upper.fill(NaN);
-    var lower = new Float64Array(n); lower.fill(NaN);
+    var upper = new Array(n).fill(NaN); upper.fill(NaN);
+    var lower = new Array(n).fill(NaN); lower.fill(NaN);
     for (var i = p - 1; i < n; i++) {
       var hi = -Infinity, lo = Infinity;
       for (var j = i - p + 1; j <= i; j++) {
@@ -857,8 +857,8 @@ var SignalEngine = (function() {
   // Returns { longEntry[], longExit[], shortEntry[], shortExit[] }
   function generate(data, ind, longStrat, shortStrat, shortEnabled) {
     var n = data.closes.length;
-    var le = new Int8Array(n), lx = new Int8Array(n);
-    var se = new Int8Array(n), sx = new Int8Array(n);
+    var le = new Array(n).fill(0), lx = new Array(n).fill(0);
+    var se = new Array(n).fill(0), sx = new Array(n).fill(0);
     for (var i = 1; i < n; i++) {
       le[i] = scoreLongEntry(i, ind, data, longStrat);
       lx[i] = scoreLongExit(i, ind, data, longStrat);
@@ -1075,7 +1075,7 @@ var ExecutionEngine = (function() {
 
     // Step 3: 初始化 portfolio
     var pf      = createPortfolio(capital);
-    var equity  = new Float64Array(n);
+    var equity  = new Array(n).fill(NaN);
     var trades  = [];
 
     // execType=open：第 i 天的訊號在第 i+1 天開盤執行
@@ -1113,24 +1113,24 @@ var ExecutionEngine = (function() {
           var lots = Math.floor(base * posSizePct / (execPrice * 1000));
           portfolioEnterLong(pf, lots, execPrice, date, buyFeeRate);
           if (pf.position) {
-            trades.push({ type: 'entry', side: 'long', date, price: execPrice, qty: lots, reason: 'strategy' });
+            trades.push({ type: 'entry', side: 'long', date: date, price: execPrice, qty: lots, reason: 'strategy' });
           }
         }
         if (pendingLongExit && pf.position && pf.position.side === 'long') {
           var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, pendingReason || 'strategy');
-          if (t) trades.push({ type: 'exit', side: 'long', date, price: execPrice, qty: t.qty, ...t });
+          if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: execPrice, qty: t.qty }));
         }
         if (pendingShortEntry && !pf.position) {
           var base = posBase === 'equity' ? portfolioEquity(pf) : capital;
           var lots = Math.floor(base * posSizePct / (execPrice * 1000));
           portfolioEnterShort(pf, lots, execPrice, date, buyFeeRate);
           if (pf.position) {
-            trades.push({ type: 'entry', side: 'short', date, price: execPrice, qty: lots, reason: 'strategy' });
+            trades.push({ type: 'entry', side: 'short', date: date, price: execPrice, qty: lots, reason: 'strategy' });
           }
         }
         if (pendingShortExit && pf.position && pf.position.side === 'short') {
           var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, pendingReason || 'strategy');
-          if (t) trades.push({ type: 'exit', side: 'short', date, price: execPrice, qty: t.qty, ...t });
+          if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: execPrice, qty: t.qty }));
         }
         pendingLongEntry = pendingLongExit = pendingShortEntry = pendingShortExit = false;
         pendingReason = '';
@@ -1148,28 +1148,28 @@ var ExecutionEngine = (function() {
           var unrealPct = (checkPrice - pos.entryPrice) / pos.entryPrice;
           if (stopLossPct   && unrealPct <= -stopLossPct) {
             var t = portfolioExitPosition(pf, checkPrice, date, sellFeeRate, 'stopLoss');
-            if (t) trades.push({ type: 'exit', side: 'long', date, price: checkPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: checkPrice, qty: t.qty }));
           } else if (stopProfitPct && unrealPct >= stopProfitPct) {
             var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'stopProfit');
-            if (t) trades.push({ type: 'exit', side: 'long', date, price: closePrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: closePrice, qty: t.qty }));
           } else if (longStrat.exit.indexOf('trailing_stop') >= 0 && pf.position) {
             if (closePrice < pf.position.trailHigh * 0.95) {
               var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'trailingStop');
-              if (t) trades.push({ type: 'exit', side: 'long', date, price: closePrice, qty: t.qty, ...t });
+              if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: closePrice, qty: t.qty }));
             }
           }
         } else if (pos.side === 'short') {
           var unrealPct = (pos.entryPrice - checkPrice) / pos.entryPrice;
           if (stopLossPct   && unrealPct <= -stopLossPct) {
             var t = portfolioExitPosition(pf, checkPrice, date, sellFeeRate, 'stopLoss');
-            if (t) trades.push({ type: 'exit', side: 'short', date, price: checkPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: checkPrice, qty: t.qty }));
           } else if (stopProfitPct && unrealPct >= stopProfitPct) {
             var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'stopProfit');
-            if (t) trades.push({ type: 'exit', side: 'short', date, price: closePrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: closePrice, qty: t.qty }));
           } else if (shortStrat.exit.indexOf('s_trailing') >= 0 && pf.position) {
             if (closePrice > pf.position.trailLow * 1.05) {
               var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'trailingStop');
-              if (t) trades.push({ type: 'exit', side: 'short', date, price: closePrice, qty: t.qty, ...t });
+              if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: closePrice, qty: t.qty }));
             }
           }
         }
@@ -1191,19 +1191,19 @@ var ExecutionEngine = (function() {
               var base = posBase === 'equity' ? portfolioEquity(pf) : capital;
               var lots = Math.floor(base * posSizePct / (execPrice * 1000));
               portfolioEnterLong(pf, lots, execPrice, date, buyFeeRate);
-              if (pf.position) trades.push({ type: 'entry', side: 'long', date, price: execPrice, qty: lots, reason: 'strategy', score: leScore });
+              if (pf.position) trades.push({ type: 'entry', side: 'long', date: date, price: execPrice, qty: lots, reason: 'strategy', score: leScore });
             } else if (shortEnabled && seScore >= threshold) {
               var base = posBase === 'equity' ? portfolioEquity(pf) : capital;
               var lots = Math.floor(base * posSizePct / (execPrice * 1000));
               portfolioEnterShort(pf, lots, execPrice, date, buyFeeRate);
-              if (pf.position) trades.push({ type: 'entry', side: 'short', date, price: execPrice, qty: lots, reason: 'strategy', score: seScore });
+              if (pf.position) trades.push({ type: 'entry', side: 'short', date: date, price: execPrice, qty: lots, reason: 'strategy', score: seScore });
             }
           } else if (pf.position.side === 'long' && lxScore >= threshold) {
             var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, 'strategy');
-            if (t) trades.push({ type: 'exit', side: 'long', date, price: execPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: execPrice, qty: t.qty }));
           } else if (pf.position.side === 'short' && sxScore >= threshold) {
             var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, 'strategy');
-            if (t) trades.push({ type: 'exit', side: 'short', date, price: execPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: execPrice, qty: t.qty }));
           }
         } else {
           // open 模式：設定 pending，明日開盤執行
@@ -1338,7 +1338,7 @@ function _emptyMetrics(initCapital) {
     var dateToIdx = {};
     if (dates) { dates.forEach(function(d,i){ dateToIdx[d]=i; }); }
     // 標記每個 bar 是否持倉
-    var inPositionBar = new Uint8Array(n); // 0=空倉, 1=持倉
+    var inPositionBar = new Array(n).fill(0); // 0=空倉, 1=持倉
     var posOpen = false;
     trades.forEach(function(t) {
       if (t.type === 'entry') { posOpen = true; }
@@ -1432,11 +1432,11 @@ function runBacktestEngine(data, config) {
   if (n < 60) throw new Error('資料不足（'+n+'筆），需至少 60 筆');
 
   // 修正缺失的 OHLC（holiday gaps / missing open）
-  var closes  = data.closes  instanceof Float64Array ? data.closes  : new Float64Array(data.closes);
-  var opens   = data.opens   instanceof Float64Array ? data.opens   : new Float64Array(data.opens   || data.closes);
-  var highs   = data.highs   instanceof Float64Array ? data.highs   : new Float64Array(data.highs   || data.closes);
-  var lows    = data.lows    instanceof Float64Array ? data.lows    : new Float64Array(data.lows    || data.closes);
-  var volumes = data.volumes instanceof Float64Array ? data.volumes : new Float64Array(data.volumes || new Array(n).fill(0));
+  var closes  = data.closes  instanceof Array ? data.closes  : Array.from(data.closes);
+  var opens   = data.opens   instanceof Array ? data.opens   : Array.from(data.opens   || data.closes);
+  var highs   = data.highs   instanceof Array ? data.highs   : Array.from(data.highs   || data.closes);
+  var lows    = data.lows    instanceof Array ? data.lows    : Array.from(data.lows    || data.closes);
+  var volumes = data.volumes instanceof Array ? data.volumes : Array.from(data.volumes || new Array(n).fill(0));
 
   // 修正 NaN/0/Infinity（向前填充）
   for (var i = 0; i < n; i++) {
@@ -1828,6 +1828,8 @@ var BacktestStorage = (function() {
 // ═══════════════════════════════════════════════════════════════
 
 "use strict";
+console.log('[BT-CORE] Script 2 start');
+
 
 // ════════════════════════════════════════════════════════════
 // ENGINE META
@@ -1863,7 +1865,7 @@ var Indicators = (function() {
 
   function sma(arr, p) {
     var n = arr.length;
-    var r = new Float64Array(n);
+    var r = new Array(n).fill(NaN);
     r.fill(NaN);
     if (p > n) return r;
     var s = 0;
@@ -1878,7 +1880,7 @@ var Indicators = (function() {
 
   function ema(arr, p) {
     var n = arr.length;
-    var r = new Float64Array(n);
+    var r = new Array(n).fill(NaN);
     r.fill(NaN);
     var k = 2 / (p + 1);
     var cnt = 0, sum = 0;
@@ -1900,7 +1902,7 @@ var Indicators = (function() {
   function rsi(closes, p) {
     p = p || 14;
     var n = closes.length;
-    var r = new Float64Array(n);
+    var r = new Array(n).fill(NaN);
     r.fill(NaN);
     if (n < p + 2) return r;
     var ag = 0, al = 0;
@@ -1925,8 +1927,8 @@ var Indicators = (function() {
   function kd(highs, lows, closes, p) {
     p = p || 9;
     var n = closes.length;
-    var K = new Float64Array(n); K.fill(NaN);
-    var D = new Float64Array(n); D.fill(NaN);
+    var K = new Array(n).fill(NaN); K.fill(NaN);
+    var D = new Array(n).fill(NaN); D.fill(NaN);
     var pk = 50, pd = 50;
     for (var i = p - 1; i < n; i++) {
       var hi = -Infinity, lo = Infinity;
@@ -1948,12 +1950,12 @@ var Indicators = (function() {
     var ef = ema(closes, fast);
     var es = ema(closes, slow);
     var n  = closes.length;
-    var M  = new Float64Array(n); M.fill(NaN);
+    var M  = new Array(n).fill(NaN); M.fill(NaN);
     for (var i = 0; i < n; i++) {
       if (!isNaN(ef[i]) && !isNaN(es[i])) M[i] = ef[i] - es[i];
     }
     // EMA of MACD (using only non-NaN values)
-    var S = new Float64Array(n); S.fill(NaN);
+    var S = new Array(n).fill(NaN); S.fill(NaN);
     var k2 = 2 / (signal + 1), cnt = 0, sum = 0;
     for (var i = 0; i < n; i++) {
       if (isNaN(M[i])) continue;
@@ -1964,7 +1966,7 @@ var Indicators = (function() {
       for (var j = i - 1; j >= 0; j--) { if (!isNaN(S[j])) { prev = S[j]; break; } }
       S[i] = isNaN(prev) ? M[i] : M[i] * k2 + prev * (1 - k2);
     }
-    var H = new Float64Array(n); H.fill(NaN);
+    var H = new Array(n).fill(NaN); H.fill(NaN);
     for (var i = 0; i < n; i++) {
       if (!isNaN(M[i]) && !isNaN(S[i])) H[i] = M[i] - S[i];
     }
@@ -1976,8 +1978,8 @@ var Indicators = (function() {
     p = p || 20; mult = mult || 2;
     var n   = closes.length;
     var mid = sma(closes, p);
-    var upper = new Float64Array(n); upper.fill(NaN);
-    var lower = new Float64Array(n); lower.fill(NaN);
+    var upper = new Array(n).fill(NaN); upper.fill(NaN);
+    var lower = new Array(n).fill(NaN); lower.fill(NaN);
     for (var i = p - 1; i < n; i++) {
       var m = mid[i], s = 0;
       for (var j = i - p + 1; j <= i; j++) s += (closes[j] - m) * (closes[j] - m);
@@ -1992,7 +1994,7 @@ var Indicators = (function() {
   function wr(highs, lows, closes, p) {
     p = p || 14;
     var n = closes.length;
-    var r = new Float64Array(n); r.fill(NaN);
+    var r = new Array(n).fill(NaN); r.fill(NaN);
     for (var i = p - 1; i < n; i++) {
       var hi = -Infinity, lo = Infinity;
       for (var j = i - p + 1; j <= i; j++) {
@@ -2008,8 +2010,8 @@ var Indicators = (function() {
   function donchian(highs, lows, p) {
     p = p || 20;
     var n = highs.length;
-    var upper = new Float64Array(n); upper.fill(NaN);
-    var lower = new Float64Array(n); lower.fill(NaN);
+    var upper = new Array(n).fill(NaN); upper.fill(NaN);
+    var lower = new Array(n).fill(NaN); lower.fill(NaN);
     for (var i = p - 1; i < n; i++) {
       var hi = -Infinity, lo = Infinity;
       for (var j = i - p + 1; j <= i; j++) {
@@ -2376,8 +2378,8 @@ var SignalEngine = (function() {
   // Returns { longEntry[], longExit[], shortEntry[], shortExit[] }
   function generate(data, ind, longStrat, shortStrat, shortEnabled) {
     var n = data.closes.length;
-    var le = new Int8Array(n), lx = new Int8Array(n);
-    var se = new Int8Array(n), sx = new Int8Array(n);
+    var le = new Array(n).fill(0), lx = new Array(n).fill(0);
+    var se = new Array(n).fill(0), sx = new Array(n).fill(0);
     for (var i = 1; i < n; i++) {
       le[i] = scoreLongEntry(i, ind, data, longStrat);
       lx[i] = scoreLongExit(i, ind, data, longStrat);
@@ -2594,7 +2596,7 @@ var ExecutionEngine = (function() {
 
     // Step 3: 初始化 portfolio
     var pf      = createPortfolio(capital);
-    var equity  = new Float64Array(n);
+    var equity  = new Array(n).fill(NaN);
     var trades  = [];
 
     // execType=open：第 i 天的訊號在第 i+1 天開盤執行
@@ -2632,24 +2634,24 @@ var ExecutionEngine = (function() {
           var lots = Math.floor(base * posSizePct / (execPrice * 1000));
           portfolioEnterLong(pf, lots, execPrice, date, buyFeeRate);
           if (pf.position) {
-            trades.push({ type: 'entry', side: 'long', date, price: execPrice, qty: lots, reason: 'strategy' });
+            trades.push({ type: 'entry', side: 'long', date: date, price: execPrice, qty: lots, reason: 'strategy' });
           }
         }
         if (pendingLongExit && pf.position && pf.position.side === 'long') {
           var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, pendingReason || 'strategy');
-          if (t) trades.push({ type: 'exit', side: 'long', date, price: execPrice, qty: t.qty, ...t });
+          if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: execPrice, qty: t.qty }));
         }
         if (pendingShortEntry && !pf.position) {
           var base = posBase === 'equity' ? portfolioEquity(pf) : capital;
           var lots = Math.floor(base * posSizePct / (execPrice * 1000));
           portfolioEnterShort(pf, lots, execPrice, date, buyFeeRate);
           if (pf.position) {
-            trades.push({ type: 'entry', side: 'short', date, price: execPrice, qty: lots, reason: 'strategy' });
+            trades.push({ type: 'entry', side: 'short', date: date, price: execPrice, qty: lots, reason: 'strategy' });
           }
         }
         if (pendingShortExit && pf.position && pf.position.side === 'short') {
           var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, pendingReason || 'strategy');
-          if (t) trades.push({ type: 'exit', side: 'short', date, price: execPrice, qty: t.qty, ...t });
+          if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: execPrice, qty: t.qty }));
         }
         pendingLongEntry = pendingLongExit = pendingShortEntry = pendingShortExit = false;
         pendingReason = '';
@@ -2667,28 +2669,28 @@ var ExecutionEngine = (function() {
           var unrealPct = (checkPrice - pos.entryPrice) / pos.entryPrice;
           if (stopLossPct   && unrealPct <= -stopLossPct) {
             var t = portfolioExitPosition(pf, checkPrice, date, sellFeeRate, 'stopLoss');
-            if (t) trades.push({ type: 'exit', side: 'long', date, price: checkPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: checkPrice, qty: t.qty }));
           } else if (stopProfitPct && unrealPct >= stopProfitPct) {
             var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'stopProfit');
-            if (t) trades.push({ type: 'exit', side: 'long', date, price: closePrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: closePrice, qty: t.qty }));
           } else if (longStrat.exit.indexOf('trailing_stop') >= 0 && pf.position) {
             if (closePrice < pf.position.trailHigh * 0.95) {
               var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'trailingStop');
-              if (t) trades.push({ type: 'exit', side: 'long', date, price: closePrice, qty: t.qty, ...t });
+              if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: closePrice, qty: t.qty }));
             }
           }
         } else if (pos.side === 'short') {
           var unrealPct = (pos.entryPrice - checkPrice) / pos.entryPrice;
           if (stopLossPct   && unrealPct <= -stopLossPct) {
             var t = portfolioExitPosition(pf, checkPrice, date, sellFeeRate, 'stopLoss');
-            if (t) trades.push({ type: 'exit', side: 'short', date, price: checkPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: checkPrice, qty: t.qty }));
           } else if (stopProfitPct && unrealPct >= stopProfitPct) {
             var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'stopProfit');
-            if (t) trades.push({ type: 'exit', side: 'short', date, price: closePrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: closePrice, qty: t.qty }));
           } else if (shortStrat.exit.indexOf('s_trailing') >= 0 && pf.position) {
             if (closePrice > pf.position.trailLow * 1.05) {
               var t = portfolioExitPosition(pf, closePrice, date, sellFeeRate, 'trailingStop');
-              if (t) trades.push({ type: 'exit', side: 'short', date, price: closePrice, qty: t.qty, ...t });
+              if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: closePrice, qty: t.qty }));
             }
           }
         }
@@ -2710,19 +2712,19 @@ var ExecutionEngine = (function() {
               var base = posBase === 'equity' ? portfolioEquity(pf) : capital;
               var lots = Math.floor(base * posSizePct / (execPrice * 1000));
               portfolioEnterLong(pf, lots, execPrice, date, buyFeeRate);
-              if (pf.position) trades.push({ type: 'entry', side: 'long', date, price: execPrice, qty: lots, reason: 'strategy', score: leScore });
+              if (pf.position) trades.push({ type: 'entry', side: 'long', date: date, price: execPrice, qty: lots, reason: 'strategy', score: leScore });
             } else if (shortEnabled && seScore >= threshold) {
               var base = posBase === 'equity' ? portfolioEquity(pf) : capital;
               var lots = Math.floor(base * posSizePct / (execPrice * 1000));
               portfolioEnterShort(pf, lots, execPrice, date, buyFeeRate);
-              if (pf.position) trades.push({ type: 'entry', side: 'short', date, price: execPrice, qty: lots, reason: 'strategy', score: seScore });
+              if (pf.position) trades.push({ type: 'entry', side: 'short', date: date, price: execPrice, qty: lots, reason: 'strategy', score: seScore });
             }
           } else if (pf.position.side === 'long' && lxScore >= threshold) {
             var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, 'strategy');
-            if (t) trades.push({ type: 'exit', side: 'long', date, price: execPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'long', date: date, price: execPrice, qty: t.qty }));
           } else if (pf.position.side === 'short' && sxScore >= threshold) {
             var t = portfolioExitPosition(pf, execPrice, date, sellFeeRate, 'strategy');
-            if (t) trades.push({ type: 'exit', side: 'short', date, price: execPrice, qty: t.qty, ...t });
+            if (t) trades.push(Object.assign({}, t, { type: 'exit', side: 'short', date: date, price: execPrice, qty: t.qty }));
           }
         } else {
           // open 模式：設定 pending，明日開盤執行
@@ -2840,7 +2842,7 @@ var MetricsEngine = (function() {
     var dateToIdx = {};
     if (dates) { dates.forEach(function(d,i){ dateToIdx[d]=i; }); }
     // 標記每個 bar 是否持倉
-    var inPositionBar = new Uint8Array(n); // 0=空倉, 1=持倉
+    var inPositionBar = new Array(n).fill(0); // 0=空倉, 1=持倉
     var posOpen = false;
     trades.forEach(function(t) {
       if (t.type === 'entry') { posOpen = true; }
@@ -2934,11 +2936,11 @@ function runBacktestEngine(data, config) {
   if (n < 60) throw new Error('資料不足（'+n+'筆），需至少 60 筆');
 
   // 修正缺失的 OHLC（holiday gaps / missing open）
-  var closes  = data.closes  instanceof Float64Array ? data.closes  : new Float64Array(data.closes);
-  var opens   = data.opens   instanceof Float64Array ? data.opens   : new Float64Array(data.opens   || data.closes);
-  var highs   = data.highs   instanceof Float64Array ? data.highs   : new Float64Array(data.highs   || data.closes);
-  var lows    = data.lows    instanceof Float64Array ? data.lows    : new Float64Array(data.lows    || data.closes);
-  var volumes = data.volumes instanceof Float64Array ? data.volumes : new Float64Array(data.volumes || new Array(n).fill(0));
+  var closes  = data.closes  instanceof Array ? data.closes  : Array.from(data.closes);
+  var opens   = data.opens   instanceof Array ? data.opens   : Array.from(data.opens   || data.closes);
+  var highs   = data.highs   instanceof Array ? data.highs   : Array.from(data.highs   || data.closes);
+  var lows    = data.lows    instanceof Array ? data.lows    : Array.from(data.lows    || data.closes);
+  var volumes = data.volumes instanceof Array ? data.volumes : Array.from(data.volumes || new Array(n).fill(0));
 
   // 修正 NaN/0/Infinity（向前填充）
   for (var i = 0; i < n; i++) {
@@ -3453,11 +3455,11 @@ async function fetchData(code, start, end) {
   var result = {
     code:    code,
     dates:   rows.map(function(r){return r.date;}),
-    opens:   new Float64Array(rows.map(function(r){return +r.open||+r.close||0;})),
-    highs:   new Float64Array(rows.map(function(r){return +r.max ||+r.close||0;})),
-    lows:    new Float64Array(rows.map(function(r){return +r.min ||+r.close||0;})),
-    closes:  new Float64Array(rows.map(function(r){return +r.close||0;})),
-    volumes: new Float64Array(rows.map(function(r){return +r.Trading_Volume||0;})),
+    opens:   rows.map(function(r){return +r.open||+r.close||0;}),
+    highs:   rows.map(function(r){return +r.max ||+r.close||0;}),
+    lows:    rows.map(function(r){return +r.min ||+r.close||0;}),
+    closes:  rows.map(function(r){return +r.close||0;}),
+    volumes: rows.map(function(r){return +r.Trading_Volume||0;}),
   };
   dataCache[key] = result;
   return result;
@@ -3722,7 +3724,7 @@ async function runBacktest() {
         if (err) { setProgress(0,'錯誤：'+err); return done(); }
         setProgress(100,'回測完成 — '+data.closes.length+' 個交易日，'+result.metrics.tradeCount+' 筆交易');
         // 還原 typed array
-        result.equity = new Float64Array(result.equity);
+        result.equity = Array.isArray(result.equity) ? result.equity : Array.from(result.equity);
         showResults(result, data);
         switchTab(0);
         done();
