@@ -207,7 +207,10 @@ body{background:var(--bg);color:var(--text1);font-family:"Noto Sans TC",sans-ser
 </div>
 <div class="pdf-btn-float" id="pdfBar"><button onclick="downloadPDF()">下載 PDF 報告</button></div>
 <script>
-window.RENDER_URL = "https://taiwan-stock-api-lm71.onrender.com";
+// 自動判斷後端 URL（localhost 開發 vs Render 正式環境）
+window.RENDER_URL = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  ? "http://localhost:3001"
+  : "https://taiwan-stock-api-lm71.onrender.com";
 // 預設熱門股（未載入前顯示）
 var HOTS_DEFAULT = [
   {c:"2330",n:"台積電"},{c:"2317",n:"鴻海"},{c:"2454",n:"聯發科"},
@@ -217,26 +220,41 @@ var HOTS_DEFAULT = [
 ];
 var HOTS = HOTS_DEFAULT.slice();
 
+// 初始化先渲染預設，再延遲更新
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    renderHots();
+    setTimeout(loadHotStocks, 1500); // 頁面載入 1.5s 後才打 API，讓 Render 先醒
+  });
+} else {
+  renderHots();
+  setTimeout(loadHotStocks, 1500);
+}
+
 // 動態抓取熱門股（漲停+成交量各5支，共10支）
+var _loadHotsRunning = false;
 function loadHotStocks() {
-  fetch(window.RENDER_URL + "/scan?mode=volume&limit=5")
-    .then(function(r){ return r.json(); })
-    .then(function(volData) {
-      return fetch(window.RENDER_URL + "/scan?mode=change&limit=10")
-        .then(function(r){ return r.json(); })
-        .then(function(chgData) {
-          var vol5 = (volData.stocks||[]).slice(0,5);
-          var chg5 = (chgData.stocks||[]).filter(function(s){
-            // 選漲幅最大的5支（不重複）
-            return !vol5.find(function(v){return v.code===s.code;});
-          }).slice(0,5);
-          var combined = vol5.concat(chg5).slice(0,10);
-          if (combined.length < 5) return; // 資料不足就不更新
-          HOTS = combined.map(function(s){return {c:s.code, n:s.name||s.code};});
-          renderHots();
-        });
+  if (_loadHotsRunning) return; // 防止重複呼叫
+  _loadHotsRunning = true;
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = setTimeout(function() { if (controller) { controller.abort(); controller = null; } }, 12000); // 12s timeout
+  var opts = controller ? { signal: controller.signal } : {};
+
+  fetch(window.RENDER_URL + "/scan?mode=volume&limit=10", opts)
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function(data) {
+      clearTimeout(timer);
+      _loadHotsRunning = false;
+      var stocks = (data.stocks || []).slice(0, 10);
+      if (stocks.length < 3) return; // 資料不足不更新
+      HOTS = stocks.map(function(s) { return { c: s.code, n: s.name || s.code }; });
+      renderHots();
     })
-    .catch(function(){}); // 失敗靜默
+    .catch(function() {
+      clearTimeout(timer);
+      _loadHotsRunning = false;
+      // 失敗時保持 HOTS_DEFAULT，不顯示錯誤
+    });
 }
 
 function renderHots() {
@@ -280,26 +298,17 @@ function toggleTheme() {
 })();
 
 // 熱門股
-var hotsEl = document.getElementById("hots");
-var wbtnsEl = document.getElementById("wbtns");
-HOTS.forEach(function(h) {
-  var b = document.createElement("button");
-  b.className = "hot-chip"; b.textContent = h.c;
-  b.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
-  hotsEl.appendChild(b);
-  var w = document.createElement("div"); w.className = "welcome-chip";
-  w.innerHTML = '<div class="wc">' + h.c + '</div><div class="wn">' + h.n + '</div>';
-  w.onclick = function() { document.getElementById("inp").value = h.c; doSearch(h.c); };
-  wbtnsEl.appendChild(w);
-});
+// renderHots() handles hot stock rendering
 
 // 自動補全
-var acTimer = null, acActive = -1;
+var acTimer = null, acActive = -1, acController = null;
 document.getElementById("inp").addEventListener("input", function() {
   var q = this.value.trim();
   clearTimeout(acTimer); acActive = -1;
+  // 取消上一次未完成的 fetch（避免 race condition + memory leak）
+  if (acController) { try { acController.abort(); } catch(e) {} acController = null; }
   if (!q) { hideAC(); return; }
-  acTimer = setTimeout(function() { fetchAC(q); }, 200);
+  acTimer = setTimeout(function() { fetchAC(q); }, 250); // 250ms debounce
 });
 document.getElementById("inp").addEventListener("keydown", function(e) {
   var items = document.querySelectorAll(".ac-item");
@@ -317,20 +326,32 @@ document.addEventListener("click", function(e) {
   if (!e.target.closest(".search-wrap")) hideAC();
 });
 function fetchAC(q) {
-  fetch(window.RENDER_URL + "/search?q=" + encodeURIComponent(q))
-    .then(function(r) { return r.json(); })
+  if (typeof AbortController !== 'undefined') {
+    acController = new AbortController();
+  }
+  var opts = acController ? { signal: acController.signal } : {};
+  fetch(window.RENDER_URL + "/search?q=" + encodeURIComponent(q), opts)
+    .then(function(r) { return r.ok ? r.json() : []; })
     .then(function(list) {
+      acController = null;
       if (!list || !list.length) { hideAC(); return; }
+      // 確認搜尋框目前值仍匹配（避免 stale result）
+      if (document.getElementById("inp").value.trim().toLowerCase() !== q.toLowerCase()) return;
       var acList = document.getElementById("acList");
       acList.innerHTML = "";
       list.forEach(function(s) {
         var el = document.createElement("div"); el.className = "ac-item";
-        el.innerHTML = '<span class="ac-code">' + (s.code||"") + '</span><span class="ac-name">' + (s.name||"") + '</span><span class="ac-type">' + (s.type||"") + '</span>';
+        var _esc = function(v) { return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); };
+        el.innerHTML = '<span class="ac-code">' + _esc(s.code) + '</span><span class="ac-name">' + _esc(s.name) + '</span><span class="ac-type">' + _esc(s.type) + '</span>';
         el.onclick = function() { selectAC(s.code, s.name); };
         acList.appendChild(el);
       });
       acList.classList.add("show"); acActive = -1;
-    }).catch(function() { hideAC(); });
+    }).catch(function(e) {
+      acController = null;
+      if (e && e.name === 'AbortError') return; // 正常取消，不是錯誤
+      hideAC();
+    });
 }
 function selectAC(code, name) { document.getElementById("inp").value = code; hideAC(); doSearch(code); }
 function hideAC() { document.getElementById("acList").classList.remove("show"); acActive = -1; }
@@ -348,45 +369,126 @@ function setMode(m) {
   document.getElementById("modeVol").classList.toggle("on", m === "volume");
   document.getElementById("modeChg").classList.toggle("on", m === "change");
 }
+var _scanController = null;
 function runScan() {
-  var n = parseInt(document.getElementById("scanN").value) || 20;
+  var n = Math.min(parseInt(document.getElementById("scanN").value) || 20, 20);
   var btn = document.getElementById("scanRunBtn");
+  if (btn.disabled) return; // 防重複點擊
+  // 取消上一次掃描
+  if (_scanController) { try { _scanController.abort(); } catch(e) {} }
+  _scanController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
   btn.disabled = true; btn.textContent = "掃描中...";
-  document.getElementById("scanResult").innerHTML = '<div class="scan-msg">正在分析前' + n + '大熱門股，約需 15~30 秒...</div>';
-  fetch(window.RENDER_URL + "/scan?mode=" + scanMode + "&limit=" + n)
-    .then(function(r) { return r.json(); })
+  document.getElementById("scanResult").innerHTML =
+    '<div class="scan-msg">正在分析前' + n + '大熱門股（含評分），約需 20~40 秒...<br>'
+    + '<small style="color:var(--text3)">首次請求需等 Render 後端醒來，請稍候</small></div>';
+
+  var opts = _scanController ? { signal: _scanController.signal } : {};
+  // 60s timeout 保護（Render 免費版冷啟動可能需要 30s）
+  var timeoutId = setTimeout(function() {
+    if (_scanController) { _scanController.abort(); _scanController = null; }
+  }, 60000);
+
+  fetch(window.RENDER_URL + "/scan?mode=" + scanMode + "&limit=" + n, opts)
+    .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.error || "HTTP " + r.status); }); })
     .then(function(data) {
+      clearTimeout(timeoutId);
       btn.disabled = false; btn.textContent = "開始掃描";
-      if (data.error) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">' + data.error + '</div>'; return; }
+      if (data.error) {
+        document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">錯誤：' + data.error + '</div>';
+        return;
+      }
+      if (data.cached) {
+        document.getElementById("scanResult").innerHTML =
+          '<div style="font-size:10px;color:var(--text3);text-align:right;margin-bottom:4px">⚡ 快取結果（3分鐘內有效）</div>';
+      } else {
+        document.getElementById("scanResult").innerHTML = '';
+      }
       renderScan(data.stocks);
-    }).catch(function() {
+    }).catch(function(e) {
+      clearTimeout(timeoutId);
       btn.disabled = false; btn.textContent = "開始掃描";
-      document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">掃描失敗，請重試</div>';
+      if (e && e.name === 'AbortError') {
+        document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--yellow)">掃描逾時，請稍後重試</div>';
+      } else {
+        document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">掃描失敗：' + (e.message||"請稍後重試") + '</div>';
+      }
     });
 }
 function renderScan(stocks) {
   if (!stocks || !stocks.length) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg">無資料</div>'; return; }
+
+  // 分級圖例
+  var legend = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;font-family:IBM Plex Mono,monospace">'
+    + '<span>分級：</span>'
+    + '<span style="color:#ef4444">80-100 強勢觀察🔥</span>'
+    + '<span style="color:#f59e0b">65-79 可試單👀</span>'
+    + '<span style="color:#6b7280">50-64 等待整理⏳</span>'
+    + '<span style="color:#374151">0-49 不建議❌</span>'
+    + '</div>';
+
   var wrap = document.createElement("div"); wrap.style.overflowX = "auto";
+  wrap.innerHTML = legend;
   var table = document.createElement("table"); table.className = "scan-table";
-  table.innerHTML = '<thead><tr><th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th><th>方向</th><th>RSI</th><th>建議</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr>'
+    + '<th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th>'
+    + '<th title="綜合評分（100分滿分）">評分</th>'
+    + '<th title="分級">等級</th>'
+    + '<th title="基本面(20)+技術面(25)+量價(15)+籌碼(20)+融資(10)+題材(10)" style="font-size:9px">基/技/量<br>碼/資/材</th>'
+    + '<th>建議</th><th></th>'
+    + '</tr></thead>';
   var tbody = document.createElement("tbody");
+
   stocks.forEach(function(s) {
     var tr = document.createElement("tr"); tr.style.cursor = "pointer";
     var chgPct = parseFloat(s.changePct) || 0;
     var chgCls = chgPct > 0 ? "up" : chgPct < 0 ? "dn" : "neu";
-    var dirCls = s.direction === "偏多" ? "up" : s.direction === "偏空" ? "dn" : "neu";
-    tr.innerHTML = '<td class="scan-code">' + s.code + '</td><td>' + s.name + '</td>'
+    var sc = s.score || 0;
+    var scoreColor = sc >= 80 ? "#ef4444" : sc >= 65 ? "#f59e0b" : sc >= 50 ? "#6b7280" : "#374151";
+
+    // 分數環形進度（簡易版）
+    var scoreBar = '<div style="display:flex;align-items:center;gap:4px">'
+      + '<div style="width:32px;height:32px;border-radius:50%;border:3px solid ' + scoreColor + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:' + scoreColor + ';font-family:IBM Plex Mono,monospace">'
+      + sc + '</div></div>';
+
+    // 各面向分條
+    var detailBar = '<div style="font-family:IBM Plex Mono,monospace;font-size:9px;line-height:1.8;white-space:nowrap">'
+      + '<span style="color:#60a5fa">' + (s.fundScore||0) + '</span>/'
+      + '<span style="color:#34d399">' + (s.techScore||0) + '</span>/'
+      + '<span style="color:#a78bfa">' + (s.volScore||0) + '</span>/<br>'
+      + '<span style="color:#fb923c">' + (s.chipScore||0) + '</span>/'
+      + '<span style="color:#f87171">' + (s.marginScore||0) + '</span>/'
+      + '<span style="color:#fbbf24">' + (s.themeScore||0) + '</span>'
+      + '</div>';
+
+    tr.innerHTML = '<td class="scan-code">' + s.code + '</td>'
+      + '<td>' + s.name + '</td>'
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + s.price + '</td>'
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + (s.changePct||"—") + '</td>'
-      + '<td class="' + dirCls + '" style="font-family:IBM Plex Mono,monospace;font-size:11px">' + (s.direction||"—") + '</td>'
-      + '<td style="font-family:IBM Plex Mono,monospace">' + (s.rsi||"—") + '</td>'
+      + '<td>' + scoreBar + '</td>'
+      + '<td style="font-size:10px;color:' + scoreColor + ';font-weight:600">' + (s.grade||"—") + '</td>'
+      + '<td>' + detailBar + '</td>'
       + '<td class="scan-suggest">' + (s.suggestion||"觀察中") + '</td>'
       + '<td><button class="btn-deep">深入分析</button></td>';
+
+    // 點擊展開詳細評分
     tr.onclick = function() { deepAnalyze(s.code); };
     tr.querySelector(".btn-deep").onclick = function(e) { e.stopPropagation(); deepAnalyze(s.code); };
+
+    // 懸停 tooltip：顯示各項細節
+    if (s.scoreDetail) {
+      var detailText = Object.entries(s.scoreDetail)
+        .filter(function(e) { return !e[0].startsWith("_"); })
+        .map(function(e) { return e[0] + ": " + e[1]; })
+        .join("\n");
+      tr.title = detailText;
+    }
+
     tbody.appendChild(tr);
   });
-  table.appendChild(tbody); wrap.appendChild(table);
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
   document.getElementById("scanResult").innerHTML = "";
   document.getElementById("scanResult").appendChild(wrap);
 }
@@ -394,10 +496,21 @@ function deepAnalyze(code) { document.getElementById("inp").value = code; if (sc
 
 // 分析
 document.getElementById("sbtn").onclick = function() { doSearch(); };
-document.getElementById("inp").onkeydown = function(e) { if (e.key === "Enter") doSearch(); };
+// onkeydown handled by addEventListener above
+var _analyzeController = null;
 function doSearch(code) {
   var c = (code || document.getElementById("inp").value).trim().replace(/\s/g, "");
   if (!c) return;
+  // 取消上一次分析請求
+  if (_analyzeController) { try { _analyzeController.abort(); } catch(e) {} }
+  _analyzeController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var analyzeOpts = {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({code: c}),
+  };
+  if (_analyzeController) analyzeOpts.signal = _analyzeController.signal;
+
   document.getElementById("welcome").style.display = "none";
   document.getElementById("errbox").style.display = "none";
   document.getElementById("result").innerHTML = "";
@@ -406,21 +519,37 @@ function doSearch(code) {
   document.getElementById("pdfBar").style.display = "none";
   setStep(1);
   document.querySelectorAll(".hot-chip").forEach(function(b) { b.classList.toggle("on", b.textContent === c); });
-  fetch(window.RENDER_URL + "/analyze", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({code:c})})
-    .then(function(r) { if (!r.ok) return r.text().then(function(t) { throw new Error(t || "API 錯誤 " + r.status); }); return r.json(); })
+
+  if (window._stepT2) clearTimeout(window._stepT2);
+  if (window._stepT3) clearTimeout(window._stepT3);
+  window._stepT2 = setTimeout(function() { setStep(2); }, 8000);
+  window._stepT3 = setTimeout(function() { setStep(3); }, 20000);
+
+  function resetBtn() {
+    clearTimeout(window._stepT2); clearTimeout(window._stepT3);
+    document.getElementById("sbtn").disabled = false;
+    document.getElementById("sbtn").textContent = "分析";
+    document.getElementById("loader").classList.remove("show");
+    _analyzeController = null;
+  }
+
+  fetch(window.RENDER_URL + "/analyze", analyzeOpts)
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t || "API 錯誤 " + r.status); });
+      return r.json();
+    })
     .then(function(data) {
-      document.getElementById("loader").classList.remove("show");
+      resetBtn();
       if (data.error) throw new Error(data.error);
       renderReport(c, data.text || "");
       document.getElementById("pdfBar").style.display = "block";
-      document.getElementById("sbtn").disabled = false; document.getElementById("sbtn").textContent = "分析";
     }).catch(function(e) {
-      document.getElementById("loader").classList.remove("show");
-      var eb = document.getElementById("errbox"); eb.textContent = e.message || "發生錯誤，請重試"; eb.style.display = "block";
-      document.getElementById("sbtn").disabled = false; document.getElementById("sbtn").textContent = "分析";
+      if (e && e.name === 'AbortError') return; // 正常取消
+      resetBtn();
+      var eb = document.getElementById("errbox");
+      eb.textContent = e.message || "發生錯誤，請重試";
+      eb.style.display = "block";
     });
-  setTimeout(function() { setStep(2); }, 8000);
-  setTimeout(function() { setStep(3); }, 20000);
 }
 function setStep(n) {
   ["st1","st2","st3"].forEach(function(id, i) {
