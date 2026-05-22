@@ -398,11 +398,13 @@ function runScan() {
         document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">錯誤：' + data.error + '</div>';
         return;
       }
+      var verTag = data._v ? ' <span style="opacity:.4">(' + data._v + ')</span>' : '';
       if (data.cached) {
         document.getElementById("scanResult").innerHTML =
-          '<div style="font-size:10px;color:var(--text3);text-align:right;margin-bottom:4px">⚡ 快取結果（3分鐘內有效）</div>';
+          '<div style="font-size:10px;color:var(--text3);text-align:right;margin-bottom:4px">⚡ 快取結果（3分鐘內有效）' + verTag + '</div>';
       } else {
-        document.getElementById("scanResult").innerHTML = '';
+        document.getElementById("scanResult").innerHTML =
+          '<div style="font-size:10px;color:var(--text3);text-align:right;margin-bottom:4px">' + verTag + '</div>';
       }
       renderScan(data.stocks);
     }).catch(function(e) {
@@ -541,7 +543,7 @@ function doSearch(code) {
     .then(function(data) {
       resetBtn();
       if (data.error) throw new Error(data.error);
-      renderReport(c, data.text || "");
+      renderReport(c, data.text || "", data.scored);
       document.getElementById("pdfBar").style.display = "block";
     }).catch(function(e) {
       if (e && e.name === 'AbortError') return; // 正常取消
@@ -641,7 +643,86 @@ function downloadPDF() {
 }
 
 // 渲染報告
-function renderReport(code, text) {
+function renderReport(code, text, scored) {
+  // ── 評分卡 ─────────────────────────────────────────────
+  var scoreCard = "";
+  if (scored) {
+    var sc = scored.score || 0;
+    var gr = scored.grade || "—";
+    var grColor = scored.gradeColor || "#6b7280";
+    var d = scored.detail || {};
+    var bars = [
+      { label:"基本面", val: d._fund  || 0, max: 20, color:"#60a5fa" },
+      { label:"技術面", val: d._tech  || 0, max: 25, color:"#34d399" },
+      { label:"量價",   val: d._vol   || 0, max: 15, color:"#a78bfa" },
+      { label:"籌碼",   val: d._chip  || 0, max: 20, color:"#fb923c" },
+      { label:"融資",   val: d._margin|| 0, max: 10, color:"#f87171" },
+      { label:"題材",   val: d._theme || 0, max: 10, color:"#fbbf24" },
+    ];
+    var barsHtml = bars.map(function(b) {
+      var pct = b.max > 0 ? Math.round(b.val / b.max * 100) : 0;
+      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
+        + '<div style="width:36px;font-size:10px;color:var(--text3);text-align:right;flex-shrink:0">' + b.label + '</div>'
+        + '<div style="flex:1;background:var(--bg4);border-radius:3px;height:8px;overflow:hidden">'
+        + '<div style="width:' + pct + '%;height:100%;background:' + b.color + ';border-radius:3px;transition:width .4s"></div>'
+        + '</div>'
+        + '<div style="width:32px;font-size:10px;font-family:IBM Plex Mono,monospace;color:' + b.color + '">' + b.val + '/' + b.max + '</div>'
+        + '</div>';
+    }).join("");
+
+    // 評分細項 tooltip 內容
+    var detailItems = [
+      { key:"rev_yoy",      label:"月營收年增率" },
+      { key:"eps_growth",   label:"EPS/PE" },
+      { key:"roe",          label:"ROE估算" },
+      { key:"margin_stable",label:"毛利率代理" },
+      { key:"above_ma20",   label:"站上MA20" },
+      { key:"ma20_up",      label:"MA20向上" },
+      { key:"ma60_up",      label:"MA60向上" },
+      { key:"ma_bull",      label:"多頭排列" },
+      { key:"breakout",     label:"突破前高" },
+      { key:"up_vol",       label:"上漲放量" },
+      { key:"down_vol",     label:"回檔量縮" },
+      { key:"vol_above_avg",label:"量>均量" },
+      { key:"foreign_buy",  label:"外資連買" },
+      { key:"site_buy",     label:"投信連買" },
+      { key:"inst_total",   label:"法人合計" },
+      { key:"big_player",   label:"大戶持股" },
+      { key:"margin_health",label:"融資健康" },
+      { key:"margin_decrease",label:"融資去槓桿"},
+      { key:"theme_main",   label:"題材強勢" },
+      { key:"theme_support",label:"題材支撐" },
+    ];
+    var detailRows = detailItems.map(function(item) {
+      var val = d[item.key] || "—";
+      var plus = val.startsWith("+");
+      return '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);font-size:11px">'
+        + '<span style="color:var(--text2)">' + item.label + '</span>'
+        + '<span style="font-family:IBM Plex Mono,monospace;color:' + (plus ? "#34d399" : "var(--text3)") + '">' + val + '</span>'
+        + '</div>';
+    }).join("");
+
+    scoreCard = '<div style="background:var(--bg3);border:1px solid ' + grColor + ';border-radius:8px;padding:14px 16px;margin-bottom:16px">'
+      // 標題列
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      + '<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);letter-spacing:.08em">綜合評分</span>'
+      + '<span style="font-size:11px;font-weight:600;color:' + grColor + '">' + gr + '</span>'
+      + '</div>'
+      // 大分數 + 進度條
+      + '<div style="display:flex;gap:16px;align-items:center;margin-bottom:12px">'
+      + '<div style="width:64px;height:64px;border-radius:50%;border:4px solid ' + grColor + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+      + '<span style="font-family:IBM Plex Mono,monospace;font-size:22px;font-weight:700;color:' + grColor + '">' + sc + '</span>'
+      + '</div>'
+      + '<div style="flex:1">' + barsHtml + '</div>'
+      + '</div>'
+      // 細項展開（預設折疊）
+      + '<details style="margin-top:4px">'
+      + '<summary style="cursor:pointer;font-size:10px;color:var(--text3);font-family:IBM Plex Mono,monospace;letter-spacing:.06em;outline:none">▶ 細項評分明細</summary>'
+      + '<div style="margin-top:8px;padding:8px;background:var(--bg4);border-radius:4px">' + detailRows + '</div>'
+      + '</details>'
+      + '</div>';
+  }
+
   var sec = {
     overview:parseSection(text,"行情總覽"), tech:parseSection(text,"技術分析"),
     short:parseSection(text,"短線分析"), mid:parseSection(text,"中線分析"),
@@ -691,7 +772,7 @@ function renderReport(code, text) {
     ["主力分點","https://goodinfo.tw/StockInfo/StockBrokerTradeSum.asp?STOCK_ID="+code]
   ].map(function(l) { return '<a class="link-btn" href="' + l[1] + '" target="_blank">' + l[0] + '</a>'; }).join("");
 
-  var html = '<div class="hero fade-up">'
+  var html = scoreCard + '<div class="hero fade-up">'
     + '<div class="hero-top">'
     + '<div><div class="hero-code">' + code + '</div><div class="hero-name">' + stockName + '</div><div class="hero-meta">' + new Date().toLocaleDateString("zh-TW") + '</div></div>'
     + '<div><div class="hero-price ' + dirCls + '">' + price + '</div><div class="hero-chg ' + dirCls + '">' + dirText + '</div></div>'
