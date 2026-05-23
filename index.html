@@ -224,6 +224,7 @@ body{background:var(--bg);color:var(--text1);font-family:"Noto Sans TC",sans-ser
       <button class="mode-chip" id="modeChg" onclick="setMode('change')">漲幅排行</button>
       <button class="mode-chip" id="modeMom" onclick="setMode('momentum')">🔥 動能排行</button>
       <button class="mode-chip" id="modeSector" onclick="setMode('sector')">🏭 族群熱度</button>
+      <button class="mode-chip" id="modeLimitup" onclick="setMode('limitup')">🔒 鎖漲停</button>
       <div class="scan-n-wrap">前 <input type="number" id="scanN" value="20" min="5" max="30"> 名</div>
       <button class="btn-primary" id="scanRunBtn" onclick="runScan()" style="margin-left:auto;font-size:11px;padding:7px 14px">開始掃描</button>
     </div>
@@ -422,6 +423,8 @@ function setMode(m) {
   document.getElementById("modeMom").classList.toggle("on", m === "momentum");
   var sectorBtn = document.getElementById("modeSector");
   if (sectorBtn) sectorBtn.classList.toggle("on", m === "sector");
+  var limitupBtn = document.getElementById("modeLimitup");
+  if (limitupBtn) limitupBtn.classList.toggle("on", m === "limitup");
   var uniSel = document.getElementById("scanUniverse");
   if (uniSel) uniSel.style.display = (m === "momentum" || m === "sector") ? "inline-block" : "none";
 }
@@ -445,10 +448,12 @@ function runScan() {
   }, 60000);
 
   var uniEl = document.getElementById("scanUniverse");
-  var universe = (scanMode === "sector") ? "large"
+  var universe = (scanMode === "sector" || scanMode === "limitup") ? "large"
     : (scanMode === "momentum" && uniEl) ? uniEl.value : "custom";
   var scanMsg = scanMode === "sector"
     ? "族群熱度掃描中（大型股票池~800檔），約需 30~60 秒..."
+    : scanMode === "limitup"
+    ? "鎖漲停掃描中（篩選漲幅 > 3% 股票），約需 30~60 秒..."
     : scanMode === "momentum" && universe !== "custom"
     ? ("動能掃描中（" + (universe==="large"?"大型股票池~800檔":"全市場~1700檔") + "），約需 30~60 秒...")
     : "正在分析前" + n + "大熱門股，約需 20~40 秒...";
@@ -616,20 +621,30 @@ function renderScan(stocks) {
     var chgPct = parseFloat(s.changePct) || 0;
     var chgCls = chgPct > 0 ? "up" : chgPct < 0 ? "dn" : "neu";
     var isMomentum = (typeof scanMode !== 'undefined' && scanMode === 'momentum');
-    var sc = isMomentum ? (s.momentumScore || 0) : (s.score || 0);
-    var scoreColor = isMomentum
+    var isLimitup  = (typeof scanMode !== 'undefined' && scanMode === 'limitup');
+    var sc = isLimitup ? (s.limitUpScore || 0) : isMomentum ? (s.momentumScore || 0) : (s.score || 0);
+    var scoreColor = (isLimitup || isMomentum)
       ? (sc >= 80 ? "#ef4444" : sc >= 60 ? "#f59e0b" : sc >= 40 ? "#6b7280" : "#374151")
       : (sc >= 80 ? "#ef4444" : sc >= 65 ? "#f59e0b" : sc >= 50 ? "#6b7280" : "#374151");
 
     // 分數環形進度（簡易版）
     var scoreBar = '<div style="display:flex;align-items:center;gap:4px">'
       + '<div style="width:32px;height:32px;border-radius:50%;border:3px solid ' + scoreColor + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:' + scoreColor + ';font-family:IBM Plex Mono,monospace">'
-      + sc + '</div></div>';
+      + sc + '</div>'
+      + (isLimitup && s.distanceToLimitUp !== undefined ? '<div style="font-size:9px;color:var(--text3);font-family:IBM Plex Mono,monospace;text-align:center">距' + s.distanceToLimitUp + '%</div>' : '')
+      + '</div>';
 
     // 各面向分條
-    // Momentum tags
+    // Limitup / Momentum tags
     var momentumTagsHtml = "";
-    if (isMomentum && s.momentumTags && s.momentumTags.length) {
+    if (isLimitup && s.tags && s.tags.length) {
+      momentumTagsHtml = s.tags.map(function(t) {
+        var colors = {bull:"#34d399",hot:"#f97316",warn:"#fbbf24",bear:"#f87171",neutral:"#6b7280"};
+        return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:' +
+          (colors[t.cls]||"#6b7280") + '22;color:' + (colors[t.cls]||"#6b7280") +
+          ';border:1px solid ' + (colors[t.cls]||"#6b7280") + '44">' + t.text + '</span>';
+      }).join(" ");
+    } else if (isMomentum && s.momentumTags && s.momentumTags.length) {
       momentumTagsHtml = s.momentumTags.map(function(t) {
         var colors = {bull:"#34d399",hot:"#f97316",warn:"#fbbf24",bear:"#f87171",neutral:"#6b7280"};
         return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:' +
@@ -657,7 +672,7 @@ function renderScan(stocks) {
       + '<td>' + scoreBar + '</td>'
       + '<td style="font-size:10px;color:' + scoreColor + ';font-weight:600">' + (s.grade||"—") + '</td>'
       + '<td>' + detailBar + '</td>'
-      + '<td class="scan-suggest">' + (isMomentum && momentumTagsHtml ? momentumTagsHtml + (s.suggestion ? '<div style="font-size:10px;color:var(--text2);margin-top:2px">' + s.suggestion + '</div>' : '') : (s.suggestion||"觀察中")) + '</td>'
+      + '<td class="scan-suggest">' + ((isMomentum || isLimitup) && momentumTagsHtml ? momentumTagsHtml + (s.suggestion ? '<div style="font-size:10px;color:var(--text2);margin-top:2px">' + s.suggestion + '</div>' : '') : (s.suggestion||"觀察中")) + '</td>'
       + '<td><button class="btn-deep">深入分析</button></td>';
 
     // 點擊展開詳細評分
