@@ -841,7 +841,7 @@ function renderReport(code, text, scored) {
   var stockName = code;
   var nm = (sec.overview || "").match(/名稱[：:]\s*([^\s、，\n]{2,8})/);
   if (nm && nm[1] && nm[1] !== code) stockName = nm[1];
-  var priceMatch = text.match(/(?:收盤|股價|現價)[：:\s]*([\d,]+\.?\d*)/);
+  var priceMatch = text ? text.match(/(?:收盤|股價|現價)[：:\s]*([\d,]+\.?\d*)/) : null;
   var price = priceMatch ? priceMatch[1] : "—";
   var tags = "";
   if (isBull) tags += '<span class="tag tag-bull">整體偏多</span>';
