@@ -223,6 +223,7 @@ body{background:var(--bg);color:var(--text1);font-family:"Noto Sans TC",sans-ser
       <button class="mode-chip on" id="modeVol" onclick="setMode('volume')">成交量排行</button>
       <button class="mode-chip" id="modeChg" onclick="setMode('change')">漲幅排行</button>
       <button class="mode-chip" id="modeMom" onclick="setMode('momentum')">🔥 動能排行</button>
+      <button class="mode-chip" id="modeSector" onclick="setMode('sector')">🏭 族群熱度</button>
       <div class="scan-n-wrap">前 <input type="number" id="scanN" value="20" min="5" max="30"> 名</div>
       <button class="btn-primary" id="scanRunBtn" onclick="runScan()" style="margin-left:auto;font-size:11px;padding:7px 14px">開始掃描</button>
     </div>
@@ -265,6 +266,14 @@ var HOTS = HOTS_DEFAULT.slice();
 // 初始化先渲染預設，再延遲更新
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', function() {
+  // 族群掃描結果的股票連結（事件委派）
+  document.addEventListener('click', function(e) {
+    var el = e.target.closest('.scan-deep-link');
+    if (!el) return;
+    e.preventDefault();
+    var code = el.dataset.code;
+    if (code) { document.getElementById('inp').value = code; doSearch(code); }
+  });
     renderHots();
     setTimeout(loadHotStocks, 1500); // 頁面載入 1.5s 後才打 API，讓 Render 先醒
   });
@@ -411,6 +420,10 @@ function setMode(m) {
   document.getElementById("modeVol").classList.toggle("on", m === "volume");
   document.getElementById("modeChg").classList.toggle("on", m === "change");
   document.getElementById("modeMom").classList.toggle("on", m === "momentum");
+  var sectorBtn = document.getElementById("modeSector");
+  if (sectorBtn) sectorBtn.classList.toggle("on", m === "sector");
+  var uniSel = document.getElementById("scanUniverse");
+  if (uniSel) uniSel.style.display = (m === "momentum" || m === "sector") ? "inline-block" : "none";
 }
 var _scanController = null;
 function runScan() {
@@ -432,8 +445,11 @@ function runScan() {
   }, 60000);
 
   var uniEl = document.getElementById("scanUniverse");
-  var universe = (scanMode === "momentum" && uniEl) ? uniEl.value : "custom";
-  var scanMsg = scanMode === "momentum" && universe !== "custom"
+  var universe = (scanMode === "sector") ? "large"
+    : (scanMode === "momentum" && uniEl) ? uniEl.value : "custom";
+  var scanMsg = scanMode === "sector"
+    ? "族群熱度掃描中（大型股票池~800檔），約需 30~60 秒..."
+    : scanMode === "momentum" && universe !== "custom"
     ? ("動能掃描中（" + (universe==="large"?"大型股票池~800檔":"全市場~1700檔") + "），約需 30~60 秒...")
     : "正在分析前" + n + "大熱門股，約需 20~40 秒...";
   document.getElementById("scanResult").innerHTML = '<div class="scan-msg">' + scanMsg + '</div>';
@@ -454,7 +470,11 @@ function runScan() {
         document.getElementById("scanResult").innerHTML =
           '<div style="font-size:10px;color:var(--text3);text-align:right;margin-bottom:4px">' + verTag + '</div>';
       }
-      renderScan(data.stocks);
+      if (scanMode === "sector") {
+        renderSectorScan(data);
+      } else {
+        renderScan(data.stocks);
+      }
     }).catch(function(e) {
       clearTimeout(timeoutId);
       btn.disabled = false; btn.textContent = "開始掃描";
@@ -465,6 +485,108 @@ function runScan() {
       }
     });
 }
+function toggleSectorRow(id) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+}
+function renderSectorScan(data) {
+  var sectors = data.sectors || [];
+  var top50   = data.stocks  || [];
+  var c = document.getElementById("scanResult");
+  if (!sectors.length && !top50.length) { c.innerHTML = '<div class="scan-msg">無資料</div>'; return; }
+
+  var TAG_COLORS = {hot:"#f97316",bull:"#34d399",warn:"#fbbf24",bear:"#f87171"};
+  function tagSpan(t) {
+    var col = TAG_COLORS[t.cls] || "#6b7280";
+    return '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:'+col+'22;color:'+col+';border:1px solid '+col+'44;white-space:nowrap">'+t.text+'</span>';
+  }
+  function codeLink(code) {
+    return '<a href="#" class="scan-deep-link" data-code="'+code+'" style="color:var(--blue);text-decoration:none;font-weight:600">'+code+'</a>';
+  }
+
+  var aiHtml = data.aiComment
+    ? '<div style="background:var(--bg3);border-left:3px solid var(--accent);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text2);border-radius:0 6px 6px 0">🤖 '+data.aiComment+'</div>' : "";
+
+  var sRows = "";
+  sectors.forEach(function(s, i) {
+    var hColor  = s.sectorHeat>=80?"#ef4444":s.sectorHeat>=60?"#f59e0b":"#6b7280";
+    var tagsH   = (s.tags||[]).map(tagSpan).join(" ");
+    var avgC    = (s.avgChangePct||0)>=0?"var(--red)":"var(--green)";
+    var expandId = "sec-ex-"+i;
+    var leadMini = (s.leaders||[]).slice(0,3).map(function(l){
+      var mc = l.momentumScore>=80?"#ef4444":l.momentumScore>=60?"#f59e0b":"#6b7280";
+      return codeLink(l.code)+' <span style="color:var(--text2);font-size:10px">'+l.name+'</span> <span style="color:'+mc+';font-family:IBM Plex Mono,monospace;font-size:10px">'+l.momentumScore+'分</span>';
+    }).join(' &nbsp;');
+    var leadCards = (s.leaders||[]).map(function(l){
+      var mc = l.momentumScore>=80?"#ef4444":l.momentumScore>=60?"#f59e0b":"#6b7280";
+      var cc = parseFloat(l.changePct)>=0?"var(--red)":"var(--green)";
+      return '<div style="background:var(--bg4);border-radius:6px;padding:8px 12px;min-width:140px">'+
+        '<div>'+codeLink(l.code)+' <span style="color:var(--text1)">'+l.name+'</span></div>'+
+        '<div style="margin-top:4px;font-family:IBM Plex Mono,monospace;font-size:11px">'+
+          '<span style="color:var(--text2)">'+l.price+'</span> '+
+          '<span style="color:'+cc+'">'+l.changePct+'</span></div>'+
+        '<div style="margin-top:4px"><span style="color:'+mc+';font-size:12px;font-weight:700">動能 '+l.momentumScore+'</span></div>'+
+        '<div style="margin-top:4px">'+(l.momentumTags||[]).map(tagSpan).join(" ")+'</div>'+
+        '</div>';
+    }).join("");
+    sRows +=
+      '<tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick="toggleSectorRow(\''+expandId+'\')">'
+      +'<td style="padding:7px 8px;color:var(--text1);font-weight:600">'+s.sector+'</td>'
+      +'<td style="padding:7px 8px;text-align:center"><span style="color:'+hColor+';font-family:IBM Plex Mono,monospace;font-weight:700">'+s.sectorHeat+'</span><span style="color:var(--text3);font-size:9px">/100</span></td>'
+      +'<td style="padding:7px 8px;text-align:center;color:'+avgC+';font-family:IBM Plex Mono,monospace">'+((s.avgChangePct>=0)?"+":"")+s.avgChangePct+'%</td>'
+      +'<td style="padding:7px 8px;text-align:center;color:var(--text2)">'+Math.round((s.upRatio||0)*100)+'%</td>'
+      +'<td style="padding:7px 8px">'+tagsH+'</td>'
+      +'<td style="padding:7px 8px">'+leadMini+'</td>'
+      +'</tr>'
+      +'<tr id="'+expandId+'" style="display:none;background:var(--bg3)">'
+      +'<td colspan="6" style="padding:8px 16px"><div style="display:flex;flex-wrap:wrap;gap:8px">'+leadCards+'</div></td>'
+      +'</tr>';
+  });
+
+  var sHtml = '<div style="margin-bottom:16px">'
+    +'<div style="font-size:11px;color:var(--text3);font-family:IBM Plex Mono,monospace;margin-bottom:8px">📊 族群熱度排行（TOP 10）</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="color:var(--text3);font-size:10px;font-family:IBM Plex Mono,monospace">'
+    +'<th style="text-align:left;padding:4px 8px">族群</th>'
+    +'<th style="text-align:center;padding:4px 8px">熱度</th>'
+    +'<th style="text-align:center;padding:4px 8px">均漲幅</th>'
+    +'<th style="text-align:center;padding:4px 8px">上漲比</th>'
+    +'<th style="text-align:left;padding:4px 8px">標籤</th>'
+    +'<th style="text-align:left;padding:4px 8px">強勢股</th>'
+    +'</tr></thead><tbody>'+sRows+'</tbody></table></div></div>';
+
+  var tRows = "";
+  top50.forEach(function(s) {
+    var mc  = s.momentumScore>=80?"#ef4444":s.momentumScore>=60?"#f59e0b":"#6b7280";
+    var cc  = parseFloat(s.changePct)>=0?"var(--red)":"var(--green)";
+    var th  = (s.momentumTags||[]).map(tagSpan).join(" ");
+    tRows += '<tr style="border-bottom:1px solid var(--border)">'
+      +'<td style="padding:6px 8px">'+codeLink(s.code)+'</td>'
+      +'<td style="padding:6px 8px;color:var(--text1)">'+s.name+'</td>'
+      +'<td style="padding:6px 8px;text-align:right;font-family:IBM Plex Mono,monospace;color:var(--text1)">'+s.price+'</td>'
+      +'<td style="padding:6px 8px;text-align:right;font-family:IBM Plex Mono,monospace;color:'+cc+'">'+s.changePct+'</td>'
+      +'<td style="padding:6px 8px;text-align:center;color:'+mc+';font-family:IBM Plex Mono,monospace;font-weight:700">'+s.momentumScore+'</td>'
+      +'<td style="padding:6px 8px;color:var(--text3);font-size:11px">'+s.sector+'</td>'
+      +'<td style="padding:6px 8px">'+th+'</td>'
+      +'</tr>';
+  });
+
+  var tHtml = '<div>'
+    +'<div style="font-size:11px;color:var(--text3);font-family:IBM Plex Mono,monospace;margin-bottom:8px">🏆 動能前 '+top50.length+' 強股</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="color:var(--text3);font-size:10px;font-family:IBM Plex Mono,monospace">'
+    +'<th style="text-align:left;padding:4px 8px">代號</th>'
+    +'<th style="text-align:left;padding:4px 8px">名稱</th>'
+    +'<th style="text-align:right;padding:4px 8px">股價</th>'
+    +'<th style="text-align:right;padding:4px 8px">漲跌</th>'
+    +'<th style="text-align:center;padding:4px 8px">動能</th>'
+    +'<th style="text-align:left;padding:4px 8px">族群</th>'
+    +'<th style="text-align:left;padding:4px 8px">標籤</th>'
+    +'</tr></thead><tbody>'+tRows+'</tbody></table></div></div>';
+
+  c.innerHTML = aiHtml + sHtml + tHtml;
+}
+
 function renderScan(stocks) {
   if (!stocks || !stocks.length) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg">無資料</div>'; return; }
 
