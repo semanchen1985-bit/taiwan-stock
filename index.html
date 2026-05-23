@@ -780,7 +780,7 @@ function renderReport(code, text, scored) {
     fund:parseSection(text,"基本面分析"), industry:parseSection(text,"產業分析"),
     market:parseSection(text,"市場風格判定"), position:parseSection(text,"位階分析"),
     risk:parseSection(text,"風險分析"), levels:parseSection(text,"支撐壓力"),
-    strategy:parseSection(text,"操作策略"), ai:parseSection(text,"AI綜合分析"),
+    strategy:parseSection(text,"操作策略"), ai:parseSection(text,"AI綜合分析")||parseSection(text,"綜合分析"),
     verdict:parseSection(text,"最終裁定")
   };
   var isBull = sec.verdict.indexOf("偏多") >= 0 || sec.verdict.indexOf("看多") >= 0;
