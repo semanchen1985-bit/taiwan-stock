@@ -819,6 +819,7 @@ function renderReport(code, text, scored) {
       + '</div>';
   }
 
+  text = text || ""; // 防止 null.indexOf/match 崩潰
   var sec = {
     overview:parseSection(text,"行情總覽"), tech:parseSection(text,"技術分析"),
     short:parseSection(text,"短線分析"), mid:parseSection(text,"中線分析"),
