@@ -667,8 +667,12 @@ function parseSection(text, tag) {
 }
 
 // 富文字渲染
+function sectionCard(title, text) {
+  if (!text) return '';
+  return '<div class="card"><div class="card-title">' + title + '</div><div class="ai-text">' + richHTML(text) + '</div></div>';
+}
 function richHTML(text) {
-  if (!text) return '<span style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:12px">資料生成中...</span>';
+  if (!text) return '';
   var lines = text.split("\n");
   var out = [], inTable = false, isFirst = false;
   for (var i = 0; i < lines.length; i++) {
