@@ -577,6 +577,17 @@ function doSearch(code) {
     .then(function(data) {
       resetBtn();
       if (data.error) throw new Error(data.error);
+      if (data.aiPending) {
+        // AI 還在生成，顯示提示並 3 秒後自動重試
+        document.getElementById("errbox").textContent = "AI 報告生成中（約需 60 秒），3 秒後自動重新分析...";
+        document.getElementById("errbox").style.display = "block";
+        document.getElementById("errbox").style.color = "var(--yellow)";
+        setTimeout(function() {
+          document.getElementById("errbox").style.display = "none";
+          doSearch(c);
+        }, 3000);
+        return;
+      }
       renderReport(c, data.text || "", data.scored);
       document.getElementById("pdfBar").style.display = "block";
     }).catch(function(e) {
