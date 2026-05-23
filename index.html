@@ -414,7 +414,7 @@ function setMode(m) {
 }
 var _scanController = null;
 function runScan() {
-  var n = Math.min(parseInt(document.getElementById("scanN").value) || 20, 20);
+  var n = Math.min(parseInt(document.getElementById("scanN").value) || 20, 100);
   var btn = document.getElementById("scanRunBtn");
   if (btn.disabled) return; // 防重複點擊
   // 取消上一次掃描
@@ -422,9 +422,8 @@ function runScan() {
   _scanController = typeof AbortController !== 'undefined' ? new AbortController() : null;
 
   btn.disabled = true; btn.textContent = "掃描中...";
-  document.getElementById("scanResult").innerHTML =
-    '<div class="scan-msg">正在分析前' + n + '大熱門股（含評分），約需 20~40 秒...<br>'
-    + '<small style="color:var(--text3)">首次請求需等 Render 後端醒來，請稍候</small></div>';
+  // loading msg set above
+
 
   var opts = _scanController ? { signal: _scanController.signal } : {};
   // 60s timeout 保護（Render 免費版冷啟動可能需要 30s）
@@ -432,7 +431,13 @@ function runScan() {
     if (_scanController) { _scanController.abort(); _scanController = null; }
   }, 60000);
 
-  fetch(window.RENDER_URL + "/scan?mode=" + scanMode + "&limit=" + n, opts)
+  var uniEl = document.getElementById("scanUniverse");
+  var universe = (scanMode === "momentum" && uniEl) ? uniEl.value : "custom";
+  var scanMsg = scanMode === "momentum" && universe !== "custom"
+    ? ("動能掃描中（" + (universe==="large"?"大型股票池~800檔":"全市場~1700檔") + "），約需 30~60 秒...")
+    : "正在分析前" + n + "大熱門股，約需 20~40 秒...";
+  document.getElementById("scanResult").innerHTML = '<div class="scan-msg">' + scanMsg + '</div>';
+  fetch(window.RENDER_URL + "/scan?mode=" + scanMode + "&limit=" + n + "&universe=" + universe, opts)
     .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.error || "HTTP " + r.status); }); })
     .then(function(data) {
       clearTimeout(timeoutId);
