@@ -569,32 +569,68 @@ function doSearch(code) {
     _analyzeController = null;
   }
 
+  // Step 1: 快速拿資料（quote + hist + 評分，< 5s）
   fetch(window.RENDER_URL + "/analyze", analyzeOpts)
     .then(function(r) {
       if (!r.ok) return r.text().then(function(t) { throw new Error(t || "API 錯誤 " + r.status); });
       return r.json();
     })
     .then(function(data) {
-      resetBtn();
       if (data.error) throw new Error(data.error);
-      if (data.aiPending) {
-        // AI 還在生成，顯示提示並 3 秒後自動重試
-        document.getElementById("errbox").textContent = "AI 報告生成中（約需 60 秒），3 秒後自動重新分析...";
-        document.getElementById("errbox").style.display = "block";
-        document.getElementById("errbox").style.color = "var(--yellow)";
-        setTimeout(function() {
-          document.getElementById("errbox").style.display = "none";
-          doSearch(c);
-        }, 3000);
+
+      // 立刻顯示評分卡 + 股價（AI 報告先空）
+      if (data.text) {
+        // 已有快取的 AI 文字，直接顯示完整報告
+        resetBtn();
+        renderReport(c, data.text, data.scored);
+        document.getElementById("pdfBar").style.display = "block";
         return;
       }
-      renderReport(c, data.text || "", data.scored);
+
+      // 先顯示資料框架
+      renderReport(c, null, data.scored);
       document.getElementById("pdfBar").style.display = "block";
-    }).catch(function(e) {
-      if (e && e.name === 'AbortError') return; // 正常取消
+
+      if (!data.aiReady) {
+        resetBtn();
+        return;
+      }
+
+      // Step 2: 非同步取 AI 報告
+      document.getElementById("sbtn").textContent = "AI 分析中...";
+      var aiOpts = {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          code: c,
+          quote: data.quote,
+          indicators: data.indicators,
+          chip: data.chip,
+          margin: data.margin,
+          fundamentals: data.fundamentals,
+          revenue: data.revenue,
+          history: data.history || [],
+        }),
+      };
+      if (_analyzeController) aiOpts.signal = _analyzeController.signal;
+
+      fetch(window.RENDER_URL + "/analyze-ai", aiOpts)
+        .then(function(r) { return r.json(); })
+        .then(function(aiData) {
+          resetBtn();
+          renderReport(c, aiData.text || null, data.scored);
+        })
+        .catch(function(e) {
+          resetBtn();
+          if (e && e.name === "AbortError") return;
+        });
+    })
+    .catch(function(e) {
+      if (e && e.name === "AbortError") return;
       resetBtn();
       var eb = document.getElementById("errbox");
       eb.textContent = e.message || "發生錯誤，請重試";
+      eb.style.color = "";
       eb.style.display = "block";
     });
 }
