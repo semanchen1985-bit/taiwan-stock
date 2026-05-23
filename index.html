@@ -153,6 +153,47 @@ body{background:var(--bg);color:var(--text1);font-family:"Noto Sans TC",sans-ser
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .fade-up{animation:fadeUp .25s ease both}
 @media(max-width:600px){.welcome-grid{grid-template-columns:repeat(2,1fr)}.score-bars{grid-template-columns:1fr}}
+
+/* ── 手機版 RWD ──────────────────────────────────────── */
+@media (max-width: 600px) {
+  .hdr-inner {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .logo {
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .search-wrap {
+    flex: 1 1 100%;   /* 佔整行 */
+    max-width: 100%;
+    order: 3;         /* 移到第二行 */
+  }
+  .search-input {
+    font-size: 16px !important; /* 防 iOS 自動縮放 */
+    padding: 11px 14px;
+  }
+  .btn-primary {
+    font-size: 13px;
+    padding: 10px 16px;
+  }
+  .hdr-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  /* 掃描面板在手機上全寬 */
+  .scan-panel {
+    padding: 12px;
+  }
+  .scan-table th, .scan-table td {
+    font-size: 10px;
+    padding: 6px 4px;
+  }
+}
 </style>
 </head>
 <body>
@@ -477,14 +518,7 @@ function renderScan(stocks) {
     tr.onclick = function() { deepAnalyze(s.code); };
     tr.querySelector(".btn-deep").onclick = function(e) { e.stopPropagation(); deepAnalyze(s.code); };
 
-    // 懸停 tooltip：顯示各項細節
-    if (s.scoreDetail) {
-      var detailText = Object.entries(s.scoreDetail)
-        .filter(function(e) { return !e[0].startsWith("_"); })
-        .map(function(e) { return e[0] + ": " + e[1]; })
-        .join("\n");
-      tr.title = detailText;
-    }
+
 
     tbody.appendChild(tr);
   });
