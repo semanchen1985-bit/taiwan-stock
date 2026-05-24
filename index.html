@@ -610,7 +610,7 @@ function renderScan(stocks) {
   table.innerHTML = '<thead><tr>'
     + '<th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th>'
     + '<th title="綜合評分（100分滿分）">評分</th>'
-    + '<th title="分級">等級</th>'
+    + '<th title="分級">' + (isLimitup ? '族群' : '等級') + '</th>'
     + '<th title="基本面(20)+技術面(25)+量價(15)+籌碼(20)+融資(10)+題材(10)" style="font-size:9px">基/技/量<br>碼/資/材</th>'
     + '<th>建議</th><th></th>'
     + '</tr></thead>';
@@ -670,7 +670,7 @@ function renderScan(stocks) {
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + s.price + '</td>'
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + (s.changePct||"—") + '</td>'
       + '<td>' + scoreBar + '</td>'
-      + '<td style="font-size:10px;color:' + scoreColor + ';font-weight:600">' + (s.grade||"—") + '</td>'
+      + '<td style="font-size:10px;font-weight:600">' + (isLimitup ? '<span style="color:var(--text3);font-size:10px">' + (s.sector||"—") + '</span>' : '<span style="color:\' + scoreColor + \'">' + (s.grade||"—") + '</span>') + '</td>'
       + '<td>' + detailBar + '</td>'
       + '<td class="scan-suggest">' + ((isMomentum || isLimitup) && momentumTagsHtml ? momentumTagsHtml + (s.suggestion ? '<div style="font-size:10px;color:var(--text2);margin-top:2px">' + s.suggestion + '</div>' : '') : (s.suggestion||"觀察中")) + '</td>'
       + '<td><button class="btn-deep">深入分析</button></td>';
