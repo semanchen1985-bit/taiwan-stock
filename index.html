@@ -593,6 +593,7 @@ function renderSectorScan(data) {
 }
 
 function renderScan(stocks) {
+  var isLimitup  = (typeof scanMode !== 'undefined' && scanMode === 'limitup');
   if (!stocks || !stocks.length) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg">無資料</div>'; return; }
 
   // 分級圖例
@@ -621,7 +622,7 @@ function renderScan(stocks) {
     var chgPct = parseFloat(s.changePct) || 0;
     var chgCls = chgPct > 0 ? "up" : chgPct < 0 ? "dn" : "neu";
     var isMomentum = (typeof scanMode !== 'undefined' && scanMode === 'momentum');
-    var isLimitup  = (typeof scanMode !== 'undefined' && scanMode === 'limitup');
+
     var sc = isLimitup ? (s.limitUpScore || 0) : isMomentum ? (s.momentumScore || 0) : (s.score || 0);
     var scoreColor = (isLimitup || isMomentum)
       ? (sc >= 80 ? "#ef4444" : sc >= 60 ? "#f59e0b" : sc >= 40 ? "#6b7280" : "#374151")
