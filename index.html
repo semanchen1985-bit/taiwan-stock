@@ -631,8 +631,9 @@ function renderScan(stocks) {
     + '<th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th>'
     + '<th title="成交量（張）">成交量</th>'
     + '<th title="分級">' + (isLimitup ? '族群' : isDisposition ? '狀態' : '等級') + '</th>'
+    + '<th>建議</th>'
     + '<th title="基本面(20)+技術面(25)+量價(15)+籌碼(20)+融資(10)+題材(10)" style="font-size:9px">基/技/量<br>碼/資/材</th>'
-    + '<th>建議</th><th></th>'
+    + '<th></th>'
     + '</tr></thead>';
   var tbody = document.createElement("tbody");
 
@@ -699,8 +700,8 @@ function renderScan(stocks) {
       + '<td style="font-family:IBM Plex Mono,monospace;color:var(--text2);font-size:11px">' + (s.volume ? s.volume.toLocaleString() : "—") + '</td>'
       + '<td>' + scoreBar + '</td>'
       + '<td style="font-size:10px;font-weight:600">' + (isDisposition ? '<span style="font-size:10px;font-weight:700;color:' + (s.dispositionType==='處置股'?'#f97316':s.dispositionType==='注意股'?'#fbbf24':'#6b7280') + '">' + (s.dispositionType||"—") + '</span>' : isLimitup ? '<span style="color:var(--text3);font-size:10px">' + (s.sector||"—") + '</span>' : '<span style="color:\' + scoreColor + \'">' + (s.grade||"—") + '</span>') + '</td>'
-      + '<td>' + detailBar + '</td>'
       + '<td class="scan-suggest">' + ((isMomentum || isLimitup || isDisposition) && momentumTagsHtml ? momentumTagsHtml + (s.suggestion ? '<div style="font-size:10px;color:var(--text2);margin-top:2px">' + s.suggestion + '</div>' : '') : (s.suggestion||"觀察中")) + '</td>'
+      + '<td>' + detailBar + '</td>'
       + '<td><button class="btn-deep">深入分析</button></td>';
 
     // 點擊展開詳細評分
