@@ -225,6 +225,7 @@ body{background:var(--bg);color:var(--text1);font-family:"Noto Sans TC",sans-ser
       <button class="mode-chip" id="modeMom" onclick="setMode('momentum')">🔥 動能排行</button>
       <button class="mode-chip" id="modeSector" onclick="setMode('sector')">🏭 族群熱度</button>
       <button class="mode-chip" id="modeLimitup" onclick="setMode('limitup')">🔒 鎖漲停</button>
+      <button class="mode-chip" id="modeDisposition" onclick="setMode('disposition')">⚠️ 處置股</button>
       <div class="scan-n-wrap">前 <input type="number" id="scanN" value="20" min="5" max="30"> 名</div>
       <button class="btn-primary" id="scanRunBtn" onclick="runScan()" style="margin-left:auto;font-size:11px;padding:7px 14px">開始掃描</button>
     </div>
@@ -425,6 +426,8 @@ function setMode(m) {
   if (sectorBtn) sectorBtn.classList.toggle("on", m === "sector");
   var limitupBtn = document.getElementById("modeLimitup");
   if (limitupBtn) limitupBtn.classList.toggle("on", m === "limitup");
+  var dispositionBtn = document.getElementById("modeDisposition");
+  if (dispositionBtn) dispositionBtn.classList.toggle("on", m === "disposition");
   var uniSel = document.getElementById("scanUniverse");
   if (uniSel) uniSel.style.display = (m === "momentum" || m === "sector") ? "inline-block" : "none";
 }
@@ -449,9 +452,12 @@ function runScan() {
 
   var uniEl = document.getElementById("scanUniverse");
   var universe = (scanMode === "sector" || scanMode === "limitup") ? "large"
+    : (scanMode === "disposition") ? "custom"
     : (scanMode === "momentum" && uniEl) ? uniEl.value : "custom";
   var scanMsg = scanMode === "sector"
     ? "族群熱度掃描中（大型股票池~800檔），約需 30~60 秒..."
+    : scanMode === "disposition"
+    ? "處置股 / 注意股掃描中（富果即時資料），約需 15~30 秒..."
     : scanMode === "limitup"
     ? "鎖漲停掃描中（篩選漲幅 > 3% 股票），約需 30~60 秒..."
     : scanMode === "momentum" && universe !== "custom"
@@ -486,7 +492,10 @@ function runScan() {
       if (e && e.name === 'AbortError') {
         document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--yellow)">掃描逾時，請稍後重試</div>';
       } else {
-        document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--red)">掃描失敗：' + (e.message||"請稍後重試") + '</div>';
+        var _em = e.message||"";
+        var _msg = (_em.includes("fetch")||_em.includes("Failed")||_em.includes("network"))
+          ? "連線異常，請稍後再試" : ("掃描失敗：" + (_em||"請稍後重試"));
+        document.getElementById("scanResult").innerHTML = '<div class="scan-msg" style="color:var(--yellow)">' + _msg + '</div>';
       }
     });
 }
@@ -593,8 +602,15 @@ function renderSectorScan(data) {
 }
 
 function renderScan(stocks) {
-  var isLimitup  = (typeof scanMode !== 'undefined' && scanMode === 'limitup');
+  var isLimitup      = (typeof scanMode !== 'undefined' && scanMode === 'limitup');
+  var isDisposition  = (typeof scanMode !== 'undefined' && scanMode === 'disposition');
   if (!stocks || !stocks.length) { document.getElementById("scanResult").innerHTML = '<div class="scan-msg">無資料</div>'; return; }
+
+  // 處置股警語
+  if (isDisposition) {
+    var warning = '<div style="background:#f97316;opacity:0.15;border:1px solid #f97316;border-radius:6px;padding:8px 14px;margin-bottom:10px;font-size:11px;color:#f97316;font-family:IBM Plex Mono,monospace">⚠️ 處置股波動大、流動性差，僅供觀察，不代表買進建議。</div>';
+    document.getElementById("scanResult").innerHTML = warning;
+  }
 
   // 分級圖例
   var legend = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;font-family:IBM Plex Mono,monospace">'
@@ -611,7 +627,7 @@ function renderScan(stocks) {
   table.innerHTML = '<thead><tr>'
     + '<th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th>'
     + '<th title="綜合評分（100分滿分）">評分</th>'
-    + '<th title="分級">' + (isLimitup ? '族群' : '等級') + '</th>'
+    + '<th title="分級">' + (isLimitup ? '族群' : isDisposition ? '狀態' : '等級') + '</th>'
     + '<th title="基本面(20)+技術面(25)+量價(15)+籌碼(20)+融資(10)+題材(10)" style="font-size:9px">基/技/量<br>碼/資/材</th>'
     + '<th>建議</th><th></th>'
     + '</tr></thead>';
@@ -623,7 +639,7 @@ function renderScan(stocks) {
     var chgCls = chgPct > 0 ? "up" : chgPct < 0 ? "dn" : "neu";
     var isMomentum = (typeof scanMode !== 'undefined' && scanMode === 'momentum');
 
-    var sc = isLimitup ? (s.limitUpScore || 0) : isMomentum ? (s.momentumScore || 0) : (s.score || 0);
+    var sc = isDisposition ? (s.dispositionScore || 0) : isLimitup ? (s.limitUpScore || 0) : isMomentum ? (s.momentumScore || 0) : (s.score || 0);
     var scoreColor = (isLimitup || isMomentum)
       ? (sc >= 80 ? "#ef4444" : sc >= 60 ? "#f59e0b" : sc >= 40 ? "#6b7280" : "#374151")
       : (sc >= 80 ? "#ef4444" : sc >= 65 ? "#f59e0b" : sc >= 50 ? "#6b7280" : "#374151");
@@ -639,6 +655,13 @@ function renderScan(stocks) {
     // Limitup / Momentum tags
     var momentumTagsHtml = "";
     if (isLimitup && s.tags && s.tags.length) {
+      momentumTagsHtml = s.tags.map(function(t) {
+        var colors = {bull:"#34d399",hot:"#f97316",warn:"#fbbf24",bear:"#f87171",neutral:"#6b7280"};
+        return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:' +
+          (colors[t.cls]||"#6b7280") + '22;color:' + (colors[t.cls]||"#6b7280") +
+          ';border:1px solid ' + (colors[t.cls]||"#6b7280") + '44">' + t.text + '</span>';
+      }).join(" ");
+    } else if (isDisposition && s.tags && s.tags.length) {
       momentumTagsHtml = s.tags.map(function(t) {
         var colors = {bull:"#34d399",hot:"#f97316",warn:"#fbbf24",bear:"#f87171",neutral:"#6b7280"};
         return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:' +
@@ -671,9 +694,9 @@ function renderScan(stocks) {
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + s.price + '</td>'
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + (s.changePct||"—") + '</td>'
       + '<td>' + scoreBar + '</td>'
-      + '<td style="font-size:10px;font-weight:600">' + (isLimitup ? '<span style="color:var(--text3);font-size:10px">' + (s.sector||"—") + '</span>' : '<span style="color:\' + scoreColor + \'">' + (s.grade||"—") + '</span>') + '</td>'
+      + '<td style="font-size:10px;font-weight:600">' + (isDisposition ? '<span style="font-size:10px;font-weight:700;color:' + (s.dispositionType==='處置股'?'#f97316':s.dispositionType==='注意股'?'#fbbf24':'#6b7280') + '">' + (s.dispositionType||"—") + '</span>' : isLimitup ? '<span style="color:var(--text3);font-size:10px">' + (s.sector||"—") + '</span>' : '<span style="color:\' + scoreColor + \'">' + (s.grade||"—") + '</span>') + '</td>'
       + '<td>' + detailBar + '</td>'
-      + '<td class="scan-suggest">' + ((isMomentum || isLimitup) && momentumTagsHtml ? momentumTagsHtml + (s.suggestion ? '<div style="font-size:10px;color:var(--text2);margin-top:2px">' + s.suggestion + '</div>' : '') : (s.suggestion||"觀察中")) + '</td>'
+      + '<td class="scan-suggest">' + ((isMomentum || isLimitup || isDisposition) && momentumTagsHtml ? momentumTagsHtml + (s.suggestion ? '<div style="font-size:10px;color:var(--text2);margin-top:2px">' + s.suggestion + '</div>' : '') : (s.suggestion||"觀察中")) + '</td>'
       + '<td><button class="btn-deep">深入分析</button></td>';
 
     // 點擊展開詳細評分
@@ -791,7 +814,9 @@ function doSearch(code) {
       if (e && e.name === "AbortError") return;
       resetBtn();
       var eb = document.getElementById("errbox");
-      eb.textContent = e.message || "發生錯誤，請重試";
+      var msg = e.message || "";
+      eb.textContent = (msg.includes("fetch") || msg.includes("network") || msg.includes("Failed"))
+        ? "連線異常，請稍後再試" : (msg || "發生錯誤，請重試");
       eb.style.color = "";
       eb.style.display = "block";
     });
