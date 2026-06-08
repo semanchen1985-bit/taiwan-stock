@@ -696,6 +696,7 @@ function renderScan(stocks) {
       + '<td>' + s.name + '</td>'
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + s.price + '</td>'
       + '<td class="' + chgCls + '" style="font-family:IBM Plex Mono,monospace">' + (s.changePct||"—") + '</td>'
+      + '<td style="font-family:IBM Plex Mono,monospace;color:var(--text2);font-size:11px">' + (s.volume ? s.volume.toLocaleString() : "—") + '</td>'
       + '<td>' + scoreBar + '</td>'
       + '<td style="font-size:10px;font-weight:600">' + (isDisposition ? '<span style="font-size:10px;font-weight:700;color:' + (s.dispositionType==='處置股'?'#f97316':s.dispositionType==='注意股'?'#fbbf24':'#6b7280') + '">' + (s.dispositionType||"—") + '</span>' : isLimitup ? '<span style="color:var(--text3);font-size:10px">' + (s.sector||"—") + '</span>' : '<span style="color:\' + scoreColor + \'">' + (s.grade||"—") + '</span>') + '</td>'
       + '<td>' + detailBar + '</td>'
